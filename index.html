@@ -1,0 +1,2713 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chrono - Intelligent Scheduler</title>
+    <link rel="icon" href="./image.png" type="image/png">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        gray: { 750: '#2d3748', 850: '#1a202c', 950: '#171923' },
+                        span: { light: 'rgba(168, 85, 247, 0.15)', dark: 'rgba(168, 85, 247, 0.3)' }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e0; border-radius: 4px; }
+        .dark ::-webkit-scrollbar-thumb { background: #4a5568; }
+        ::-webkit-scrollbar-thumb:hover { background: #a0aec0; }
+        .fade-in { animation: fadeIn 0.2s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-out { animation: fadeOut 0.3s ease-in forwards; }
+        @keyframes fadeOut { from { opacity: 1; transform: translateY(0); } to { opacity: 0; transform: translateY(10px); } }
+        .highlight-span { transition: background-color 0.3s ease; position: relative; }
+        .highlight-span::after { content: ''; position: absolute; inset: 2px; border: 2px solid rgba(168, 85, 247, 0.4); border-radius: 6px; pointer-events: none; }
+        .clock-font { font-variant-numeric: tabular-nums; }
+        .today-highlight { box-shadow: inset 0 0 0 2px #3b82f6; background-color: rgba(59, 130, 246, 0.1); font-weight: bold; }
+        .dark .today-highlight { box-shadow: inset 0 0 0 2px #60a5fa; background-color: rgba(96, 165, 250, 0.15); }
+        .draggable-event { cursor: grab; }
+        .draggable-event:active { cursor: grabbing; opacity: 0.5; }
+        .drop-zone-hover { background-color: rgba(59, 130, 246, 0.1) !important; }
+        .task-done { text-decoration: line-through; opacity: 0.6; }
+        /* Loader */
+        .loader { border: 3px solid #f3f3f3; border-radius: 50%; border-top: 3px solid #3b82f6; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .icon-circle-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px; /* Adjust size as needed */
+            height: 32px; /* Adjust size as needed */
+            border-radius: 9999px; /* Makes it a circle */
+            background-color: rgba(100, 116, 139, 0.1); /* Default light gray background */
+            transition: background-color 0.2s ease;
+        }
+        .icon-circle-button:hover {
+            background-color: rgba(100, 116, 139, 0.2); /* Slightly darker on hover */
+        }
+        .dark .icon-circle-button {
+            background-color: rgba(71, 85, 105, 0.3); /* Default dark gray background */
+        }
+        .dark .icon-circle-button:hover {
+            background-color: rgba(71, 85, 105, 0.5); /* Slightly darker on hover */
+        }
+    </style>
+</head>
+<body class="bg-gray-50 dark:bg-gray-950 text-gray-800 dark:text-gray-100 font-sans h-screen flex overflow-hidden transition-colors duration-200">
+
+    <!-- SIDEBAR -->
+    <aside class="hidden md:flex w-80 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex-col h-full z-20 shadow-lg transition-colors">
+        <div class="p-6 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <div class="w-10 h-10 rounded-lg flex items-center justify-center">
+                    <img src="./image.png" alt="Chrono Logo" class="w-19 h-19">
+                </div>
+                <h1 class="text-xl font-bold text-gray-800 dark:text-white tracking-tight">Chrono</h1>
+            </div>
+            <div class="flex gap-1">
+                <button onclick="performUndo()" class="icon-circle-button text-gray-500 dark:text-gray-400" title="Undo">
+                    <i data-lucide="undo-2" class="w-5 h-5"></i>
+                </button>
+                <button onclick="performRedo()" class="icon-circle-button text-gray-500 dark:text-gray-400" title="Redo">
+                    <i data-lucide="redo-2" class="w-5 h-5"></i>
+                </button>
+                <button onclick="toggleTheme()" class="icon-circle-button text-gray-500 dark:text-gray-400" title="Toggle Theme">
+                    <i data-lucide="sun" class="w-5 h-5 hidden dark:block"></i>
+                    <i data-lucide="moon" class="w-5 h-5 block dark:hidden"></i>
+                </button>
+                <button onclick="openModal('helpModal')" class="icon-circle-button text-gray-500 dark:text-gray-400" title="Chrono AI Help & Tips">
+                    <i data-lucide="info" class="w-5 h-5"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="p-6 flex-1 overflow-y-auto space-y-6 custom-scrollbar">
+            
+            <!-- Natural Language Input -->
+            <div class="relative group">
+                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <i data-lucide="sparkles" class="w-4 h-4 text-blue-500 group-hover:text-purple-500 transition-colors"></i>
+                </div>
+                <input type="text" id="nlpInput" placeholder="Type 'Task buy milk' or 'Exam next Friday'..." 
+                    class="w-full pl-10 pr-10 py-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                    onkeydown="handleNLPInputOnEnter(event)" oninput="showNlpSuggestions(this.value)" list="nlpSuggestions">
+                <button onclick="handleNLPInput({ key: 'Enter' })" class="absolute inset-y-0 right-0 pr-3 flex items-center text-blue-500 hover:text-purple-500 transition-colors" title="Send">
+                    <i data-lucide="send" class="w-4 h-4"></i>
+                </button>
+                <datalist id="nlpSuggestions"></datalist>
+            </div>
+
+            <!-- Main Actions -->
+            <div class="grid grid-cols-2 gap-2">
+                <button onclick="openModal('uploadModal')" class="flex flex-col items-center justify-center gap-1 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 py-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-xs font-medium shadow-sm">
+                    <i data-lucide="file-up" class="w-4 h-4 text-blue-500"></i>
+                    <span>Import PDF</span>
+                </button>
+                <button onclick="openOptimizationModal()" class="flex flex-col items-center justify-center gap-1 bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 py-3 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors text-xs font-medium shadow-sm">
+                    <i data-lucide="brain-circuit" class="w-4 h-4 text-purple-500"></i>
+                    <span>AI Optimize</span>
+                </button>
+            </div>
+
+            <!-- Mini Calendar Info -->
+            <div class="bg-gray-50 dark:bg-gray-900/50 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
+                <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">Today</h3>
+                <div class="flex justify-between items-center">
+                    <span class="text-3xl font-bold text-gray-800 dark:text-white" id="mini-day-number">--</span>
+                    <div class="text-right">
+                        <div class="text-sm font-medium text-gray-600 dark:text-gray-300" id="mini-day-name">--</div>
+                        <div class="text-xs text-gray-400 dark:text-gray-500" id="mini-month-year">--</div>
+                    </div>
+                </div>
+                <button onclick="jumpToToday()" class="mt-3 w-full text-xs bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 transition-colors">
+                    Go to Today
+                </button>
+            </div>
+
+            <!-- Tasks Panel -->
+            <div>
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">Tasks & To-Dos</h3>
+                    <button onclick="openModal('addTaskModal')" class="icon-circle-button text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 p-0 rounded-full">
+                        <i data-lucide="plus" class="w-5 h-5"></i>
+                    </button>
+                </div>
+                <div id="taskList" class="space-y-2 min-h-[50px] max-h-[200px] overflow-y-auto pr-1">
+                    <p class="text-xs text-gray-400 text-center py-2">No pending tasks</p>
+                </div>
+            </div>
+
+            <!-- Legend -->
+            <div>
+                <h3 class="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-4">Categories</h3>
+                <div class="space-y-3" id="legend-container"></div>
+            </div>
+        </div>
+
+        <!-- Footer Controls -->
+        <div class="p-4 border-t border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900/50">
+            <div class="flex justify-between items-center text-xs text-gray-500 mb-3">
+                <span>Data Management</span>
+                <i data-lucide="database" class="w-3 h-3"></i>
+            </div>
+            <div class="grid grid-cols-2 gap-2 mb-2">
+                <button onclick="downloadBackup()" class="flex items-center justify-center gap-2 bg-white dark:bg-gray-800 py-2 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition text-xs">Backup</button>
+                <button onclick="triggerRestore()" class="flex items-center justify-center gap-2 bg-white dark:bg-gray-800 py-2 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition text-xs">Restore</button>
+            </div>
+            <div class="pt-4 border-t border-gray-100 dark:border-gray-800 mt-4">
+                <div class="flex justify-between text-xs text-gray-500 mb-2">
+                    <span>Events this month:</span>
+                    <span class="font-bold text-gray-700 dark:text-gray-300" id="stat-event-count">0</span>
+                </div>
+            </div>
+            <button onclick="confirmAction('clear_all')" class="w-full flex items-center justify-center gap-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 py-1.5 rounded transition text-xs">
+                Reset Calendar
+            </button>
+            <input type="file" id="restoreInput" class="hidden" accept=".json" onchange="restoreBackup(this)">
+        </div>
+    </aside>
+
+    <!-- MAIN CONTENT -->
+    <main class="flex-1 flex flex-col h-full relative bg-white dark:bg-gray-950 transition-colors">
+        <header class="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 p-4 flex items-center justify-between shadow-sm z-10">
+            <div class="flex items-center gap-4">
+                <div class="md:hidden mr-2 cursor-pointer" onclick="toggleMobileSidebar()">
+                    <i data-lucide="menu" class="w-6 h-6 text-gray-600 dark:text-gray-300"></i>
+                </div>
+                <h2 class="text-2xl font-bold text-gray-800 dark:text-white" id="header-month-title">Loading...</h2>
+                <div class="flex items-center bg-gray-100 dark:bg-gray-800 rounded-lg p-1 border border-gray-200 dark:border-gray-700">
+                    <button onclick="changeMonth(-1)" class="p-2 hover:bg-white dark:hover:bg-gray-700 rounded-md text-gray-600 dark:text-gray-400 shadow-sm transition-all"><i data-lucide="chevron-left" class="w-5 h-5"></i></button>
+                    <button onclick="changeMonth(1)" class="p-2 hover:bg-white dark:hover:bg-gray-700 rounded-md text-gray-600 dark:text-gray-400 shadow-sm transition-all"><i data-lucide="chevron-right" class="w-5 h-5"></i></button>
+                </div>
+                <div id="live-clock" class="clock-font text-xl font-bold text-blue-600 dark:text-blue-400 hidden sm:block">--:-- --</div>
+            </div>
+            
+            <div class="flex items-center gap-2">
+                <button onclick="openModal('searchModal')" class="p-2.5 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors shadow-md flex items-center gap-1 text-sm pr-3">
+                    <i data-lucide="search" class="w-5 h-5"></i>
+                    <span class="hidden sm:inline">Search Events</span>
+                </button>
+                <button onclick="openModal('settingsModal')" class="icon-circle-button text-gray-600 dark:text-gray-300" title="Settings">
+                    <i data-lucide="settings" class="w-5 h-5"></i>
+                </button>
+                <button class="md:hidden p-2 text-blue-600 dark:text-blue-400 font-medium text-sm" onclick="jumpToToday()">Today</button>
+            </div>
+        </header>
+
+        <div class="flex-1 overflow-auto bg-gray-50 dark:bg-gray-950 p-4" id="calendar-scroll-container">
+            <div class="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 overflow-hidden h-full flex flex-col transition-colors">
+                <div class="grid grid-cols-7 border-b border-gray-200 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50">
+                    <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase">Sun</div>
+                    <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase">Mon</div>
+                    <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase">Tue</div>
+                    <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase">Wed</div>
+                    <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase">Thu</div>
+                    <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase">Fri</div>
+                    <div class="py-3 text-center text-xs font-bold text-gray-400 uppercase">Sat</div>
+                </div>
+                <div id="calendar-grid" class="grid grid-cols-7 grid-rows-6 flex-1"></div>
+            </div>
+        </div>
+    </main>
+
+    <!-- MODALS -->
+
+    <!-- 1. Search Modal -->
+    <div id="searchModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden fade-in flex flex-col max-h-[70vh] border border-gray-200 dark:border-gray-700">
+            <div class="p-4 border-b border-gray-100 dark:border-gray-700 flex items-center gap-2">
+                <i data-lucide="search" class="text-gray-400 w-5 h-5"></i>
+                <input type="text" id="searchInput" placeholder="Type to search events..." class="flex-1 bg-transparent outline-none text-gray-800 dark:text-white placeholder-gray-400" oninput="handleSearch(this.value)">
+                <button onclick="closeModal('searchModal')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div id="searchResults" class="p-2 overflow-y-auto flex-1 custom-scrollbar bg-gray-50 dark:bg-gray-900/50 min-h-[100px]">
+                <p class="text-center text-gray-400 text-sm py-8">Start typing to find events...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 2. Confirmation Modal -->
+    <div id="confirmModal" class="hidden fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden fade-in border border-gray-200 dark:border-gray-700 text-center p-6">
+            <div class="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4 text-red-600 dark:text-red-400">
+                <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">Are you absolutely sure?</h3>
+            <p id="confirmMessage" class="text-sm text-gray-500 dark:text-gray-400 mb-6">This action cannot be undone.</p>
+            <div class="flex gap-3 justify-center">
+                <button onclick="closeModal('confirmModal')" class="px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg font-medium text-sm hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">Cancel</button>
+                <button id="confirmBtnAction" class="px-4 py-2 bg-red-600 text-white rounded-lg font-medium text-sm hover:bg-red-700 transition-colors shadow-md">Yes, Proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 3. Optimization Modal -->
+    <div id="optimizationModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-sm overflow-hidden fade-in border border-gray-200 dark:border-gray-700 text-center p-6">
+            <div class="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center mx-auto mb-4 text-yellow-600 dark:text-yellow-400">
+                <i data-lucide="zap" class="w-6 h-6"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-900 dark:text-white mb-2">Find a Free Slot</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">How much time do you need?</p>
+            <div class="grid grid-cols-3 gap-2 mb-4">
+                <button onclick="findSmartSlots(30)" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm rounded border border-gray-200 dark:border-gray-600">30m</button>
+                <button onclick="findSmartSlots(60)" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm rounded border border-gray-200 dark:border-gray-600">1h</button>
+                <button onclick="findSmartSlots(120)" class="px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 text-sm rounded border border-gray-200 dark:border-gray-600">2h</button>
+            </div>
+            <div id="optimizationResults" class="text-left space-y-2 max-h-40 overflow-y-auto custom-scrollbar hidden">
+                <!-- Results -->
+            </div>
+            <button onclick="closeModal('optimizationModal')" class="mt-4 text-sm text-gray-500 hover:text-gray-800 dark:hover:text-gray-200 underline">Cancel</button>
+        </div>
+    </div>
+
+    <!-- 4. Insights Modal -->
+    <div id="insightsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden fade-in border border-gray-200 dark:border-gray-700">
+            <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gradient-to-r from-purple-50 to-blue-50 dark:from-gray-800 dark:to-gray-800">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="sparkles" class="w-5 h-5 text-purple-600 dark:text-purple-400"></i>
+                    <h3 class="font-bold text-lg text-gray-800 dark:text-white">Chrono AI Insights</h3>
+                </div>
+                <button onclick="closeModal('insightsModal')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 space-y-6" id="insightsContent">
+                <div class="flex justify-center"><div class="loader border-purple-500 border-t-transparent"></div></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 5. Upload Modal -->
+    <div id="uploadModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden fade-in border border-gray-200 dark:border-gray-700">
+            <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+                <h3 class="font-semibold text-lg text-gray-800 dark:text-white">Chrono AI: Import Timetable</h3>
+                <button onclick="closeModal('uploadModal')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 space-y-6">
+                <div class="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-8 text-center hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors cursor-pointer relative group">
+                    <input type="file" id="fileInput" accept=".pdf" class="absolute inset-0 opacity-0 cursor-pointer" onchange="handleFileSelect(this)">
+                    <div class="flex flex-col items-center gap-3" id="uploadPlaceholder">
+                        <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center text-blue-600 dark:text-blue-400"><i data-lucide="upload-cloud" class="w-6 h-6"></i></div>
+                        <div>
+                            <p class="text-sm font-medium text-gray-700 dark:text-gray-200">Click to upload PDF</p>
+                            <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">Chrono AI parses dates & lists automatically.</p>
+                        </div>
+                    </div>
+                    <div id="uploadPreview" class="hidden flex-col items-center gap-2">
+                        <i data-lucide="file-text" class="w-8 h-8 text-blue-500"></i>
+                        <p class="text-sm font-medium text-gray-800 dark:text-white" id="fileName">schedule.pdf</p>
+                        <p class="text-xs text-green-600 dark:text-green-400">Ready to process</p>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button onclick="closeModal('uploadModal')" class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm">Cancel</button>
+                    
+                    <button onclick="processPDFUpload()" id="processBtn" disabled class="px-4 py-2 bg-gray-300 dark:bg-gray-700 text-white rounded-lg font-medium text-sm transition-colors flex items-center gap-2">
+                        <span id="processBtnText">Process PDF</span>
+                        <span id="pdfProgressBar" class="hidden w-full h-1 bg-blue-200 dark:bg-blue-800 rounded-full"><span class="block h-full bg-blue-600 dark:bg-blue-400 rounded-full transition-all duration-100 ease-out" style="width: 0%;"></span></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 6. View Day Modal -->
+    <div id="viewModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden fade-in flex flex-col max-h-[80vh] border border-gray-200 dark:border-gray-700">
+            <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+                <h3 class="font-semibold text-lg text-gray-800 dark:text-white" id="viewModalTitle">Day Details</h3>
+                <button onclick="closeModal('viewModal')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-4 overflow-y-auto flex-1 custom-scrollbar" id="viewModalList"></div>
+            <div class="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <button onclick="openAddModal()" class="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition-all shadow-sm font-medium"><i data-lucide="plus" class="w-4 h-4"></i> Add New Event</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 7. Add/Edit Event Modal -->
+    <div id="addModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden fade-in border border-gray-200 dark:border-gray-700">
+            <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+                <h3 class="font-semibold text-lg text-gray-800 dark:text-white" id="addModalTitle">Add Event</h3>
+                <button onclick="closeModal('addModal')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <form id="eventForm" onsubmit="handleEventSubmit(event)" class="p-6 space-y-4">
+                <input type="hidden" id="editEventId">
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Title</label>
+                    <input type="text" id="eventTitle" required class="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Category</label>
+                        <select id="eventCategory" class="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm"></select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Time</label>
+                        <input type="time" id="eventTime" class="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                    </div>
+                </div>
+                
+                <!-- RECURRENCE & NOTIFY -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Repeat</label>
+                        <select id="eventRecur" class="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                            <option value="none">None</option>
+                            <option value="daily">Daily (10x)</option>
+                            <option value="weekly">Weekly (10x)</option>
+                            <option value="biweekly">Every 2 Weeks (5x)</option>
+                            <option value="monthly">Monthly (6x)</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Notify Me</label>
+                        <select id="eventNotify" class="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                            <option value="none">No</option>
+                            <option value="10">10m Before</option>
+                            <option value="60">1h Before</option>
+                            <option value="1440">1d Before</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Description</label>
+                    <textarea id="eventDesc" class="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm h-24 resize-none"></textarea>
+                </div>
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" onclick="closeModal('addModal')" class="px-4 py-2 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg text-sm">Cancel</button>
+                    <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md text-sm">Save Event</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 8. Add Task Modal -->
+    <div id="addTaskModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden fade-in border border-gray-200 dark:border-gray-700">
+            <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+                <h3 class="font-semibold text-lg text-gray-800 dark:text-white">New Task</h3>
+                <button onclick="closeModal('addTaskModal')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <form onsubmit="handleTaskSubmit(event)" class="p-6 space-y-4">
+                <input type="text" id="taskTitle" placeholder="Task description..." required class="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                <div class="flex gap-2 items-center">
+                    <span class="text-sm text-gray-500">Due Date (Optional):</span>
+                    <input type="date" id="taskDate" class="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg p-2 text-sm">
+                </div>
+                <button type="submit" class="w-full px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md text-sm">Add Task</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- TOAST CONTAINER -->
+    <div id="toast-container" class="fixed bottom-4 right-4 z-[100] space-y-3"></div>
+
+    <!-- PDF Processing Status Bar -->
+    <div id="pdfProcessingStatus" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-full max-w-sm bg-blue-600 text-white p-3 rounded-lg shadow-xl flex items-center gap-3">
+        <div class="loader border-white border-t-transparent w-5 h-5"></div>
+        <div class="flex-1">
+            <p class="text-sm font-medium">Processing PDF: <span id="pdfProcessPercentage">0%</span></p>
+            <p class="text-xs opacity-80"><span id="pdfProcessStatusText">Extracting text...</span> - <span id="pdfProcessTimeElapsed">0s</span> elapsed</p>
+        </div>
+    </div>
+
+    <!-- 9. Help Modal -->
+    <div id="helpModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden fade-in border border-gray-200 dark:border-gray-700 max-h-[80vh] flex flex-col">
+            <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-blue-50 dark:bg-blue-900/20">
+                <h3 class="font-semibold text-lg text-blue-800 dark:text-blue-200"><i data-lucide="info" class="inline w-5 h-5 mr-2"></i> Chrono AI Help</h3>
+                <button onclick="closeModal('helpModal')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1">
+                <div class="flex justify-center mb-6">
+                    <img src="./image.png" alt="Chrono Logo" class="w-24 h-24">
+                </div>
+                <div>
+                    <h4 class="font-bold text-gray-800 dark:text-white mb-2 text-md">Natural Language Input (AI Bar)</h4>
+                    <p class="text-sm text-gray-600 dark:text-gray-300 mb-2">The AI bar understands various commands. Common ones like adding or deleting events/tasks for specific days are processed instantly:</p>
+                    <ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1 pl-4">
+                        <li><b>Add Event:</b> "Meeting Friday at 2pm", "Dentist next Tuesday 10:30am", "Study session tomorrow for 2 hours"</li>
+                        <li><b>Add Task:</b> "Task buy groceries", "Todo submit report by end of day"</li>
+                        <li><b>Delete:</b> "Delete all events for today", "Delete all AI generated events"</li>
+                        <li><b>Summarize:</b> "Summarize today", "Summarize this week"</li>
+                        <li><b>Recurring Events:</b> "Meeting every other Tuesday 3pm", "Gym every 3 weeks 6am", "Dinner last Friday of the month 7pm"</li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-bold text-gray-800 dark:text-white mb-2 text-md">Calendar Interactions</h4>
+                    <ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1 pl-4">
+                        <li>Click on any day to view/add events.</li>
+                        <li>Drag and drop events to reschedule them.</li>
+                        <li>Use the month navigation to browse dates.</li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="font-bold text-gray-800 dark:text-white mb-2 text-md">Timetable Upload (PDF)</h4>
+                    <p class="text-sm text-gray-600 dark:text-gray-300">Upload your PDF timetable, and Chrono AI will parse events automatically.</p>
+                </div>
+                <div>
+                    <h4 class="font-bold text-gray-800 dark:text-white mb-2 text-md">Smart Slots</h4>
+                    <p class="text-sm text-gray-600 dark:text-gray-300">Find available slots for new events based on your existing schedule.</p>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 text-center text-xs text-gray-500 dark:text-gray-400">
+                Made with ❤️ by D.N.
+            </div>
+        </div>
+    </div>
+
+    <!-- 10. Conflict Resolution Modal -->
+    <div id="conflictResolutionModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden fade-in border border-gray-200 dark:border-gray-700">
+            <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-red-50 dark:bg-red-900/20">
+                <h3 class="font-semibold text-lg text-red-800 dark:text-red-200"><i data-lucide="alert-triangle" class="inline w-5 h-5 mr-2"></i> Conflict Detected!</h3>
+                <button onclick="closeModal('conflictResolutionModal')" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 space-y-4">
+                <p class="text-gray-700 dark:text-gray-300">The event <span id="conflictingNewEventTitle" class="font-semibold"></span> at <span id="conflictingNewEventTime" class="font-semibold"></span> on <span id="conflictingNewEventDate" class="font-semibold"></span> conflicts with the following existing events:</p>
+                <ul id="conflictingEventsList" class="list-disc list-inside space-y-1 text-sm text-gray-600 dark:text-gray-400"></ul>
+                <p class="font-semibold text-gray-800 dark:text-gray-200">How would you like to resolve this conflict?</p>
+                <div class="flex flex-col gap-3">
+                    <button onclick="resolveConflict('reschedule_new')" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium shadow-md text-sm">Find Next Available Slot for New Event</button>
+                    <button onclick="resolveConflict('reschedule_existing')" class="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium shadow-md text-sm">Reschedule Existing Events (Experimental)</button>
+                    <button onclick="resolveConflict('ignore')" class="w-full px-4 py-2 bg-gray-300 dark:bg-gray-700 text-gray-800 dark:text-white rounded-lg hover:bg-gray-400 dark:hover:bg-gray-600 font-medium text-sm">Add Anyway (Ignore Conflict)</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 11. Settings Modal -->
+    <div id="settingsModal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div class="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md overflow-hidden fade-in border border-gray-200 dark:border-gray-700 max-h-[80vh] flex flex-col">
+            <div class="px-6 py-4 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-800/50">
+                <h3 class="font-semibold text-lg text-gray-800 dark:text-white"><i data-lucide="settings" class="inline w-5 h-5 mr-2"></i> Settings & Info</h3>
+                <button onclick="closeModal('settingsModal')" class="icon-circle-button text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+            <div class="p-6 space-y-5 overflow-y-auto custom-scrollbar flex-1" id="settingsContent">
+                <div class="flex justify-center"><div class="loader border-blue-500 border-t-transparent"></div></div>
+                <!-- Content will be rendered here by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIG ---
+        const CATEGORIES = {
+            IMPORTED: { id: 'imported', label: 'Timetable', color: 'bg-yellow-100 text-yellow-900 border-yellow-300 dark:bg-yellow-900/40 dark:text-yellow-100 dark:border-yellow-700', dot: 'bg-yellow-500' },
+            MULTI_START: { id: 'multi_start', label: 'Multi-day (Start)', color: 'bg-purple-100 text-purple-900 border-purple-300 dark:bg-purple-900/40 dark:text-purple-100 dark:border-purple-700', dot: 'bg-purple-500' },
+            MULTI_END: { id: 'multi_end', label: 'Multi-day (Reference)', color: 'bg-gray-100 text-gray-600 border-gray-300 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700', dot: 'bg-gray-400' },
+            ACADEMIC: { id: 'academic', label: 'Academic', color: 'bg-blue-100 text-blue-900 border-blue-300 dark:bg-blue-900/40 dark:text-blue-100 dark:border-blue-700', dot: 'bg-blue-500' },
+            PERSONAL: { id: 'personal', label: 'Personal', color: 'bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-900/40 dark:text-emerald-100 dark:border-emerald-700', dot: 'bg-emerald-500' },
+            WORK: { id: 'work', label: 'Work', color: 'bg-teal-100 text-teal-900 border-teal-300 dark:bg-teal-900/40 dark:text-teal-100 dark:border-teal-700', dot: 'bg-teal-500' },
+            IMPORTANT: { id: 'important', label: 'Important', color: 'bg-red-100 text-red-900 border-red-300 dark:bg-red-900/40 dark:text-red-100 dark:border-red-700', dot: 'bg-red-500' },
+        };
+        
+        // IMPORTANT: Due to browser security (CORS policy), this HTML file must be served from a local web server
+        // (e.g., using `live-server` or `python -m http.server`) for the Gemini API calls to work.
+        // Opening index.html directly from the file system will result in CORS errors.
+        const GEMINI_API_KEY = 'AIzaSyBsFpIGabAXGSqxcXK_kjQZ9IFkwf9-Zy8';
+        const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' + GEMINI_API_KEY; // Corrected URL with model name
+
+        async function callGeminiAPI(prompt) {
+            try {
+                const response = await fetch(GEMINI_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        // model: "gemini-2.5-flash", // Model is now in the URL path
+                        contents: [{ parts: [{ text: prompt }] }],
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(`Gemini API error: ${response.status} - ${errorData.error.message}`);
+                }
+
+                const data = await response.json();
+                return data.candidates[0].content.parts[0].text;
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                throw error;
+            }
+        }
+        
+        const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+        const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const DAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']; // Added from index2.html
+
+        let state = {
+            currentDate: new Date(),
+            selectedDate: null,
+            events: {},
+            tasks: [], 
+            highlightRange: null
+        };
+        
+        // UNDO/REDO SYSTEM
+        let historyStack = [];
+        let redoStack = [];
+        const MAX_HISTORY = 20;
+
+        let notificationInterval = null;
+        let clockInterval = null;
+
+        // --- MOVED NOTIFICATIONS HELPER TO TOP ---
+        function checkNotifications() {
+            if (Notification.permission !== 'granted') return;
+            const now = new Date();
+            Object.keys(state.events).forEach(dateKey => {
+                state.events[dateKey].forEach(event => {
+                    if (!event.notifyMinutes || event.hasNotified) return;
+                    const [y, m, d] = dateKey.split('-').map(Number); const [h, min] = event.time.split(':').map(Number);
+                    const eventDate = new Date(y, m-1, d, h, min); const triggerTime = new Date(eventDate.getTime() - (event.notifyMinutes * 60000));
+                    if (now >= triggerTime && now < eventDate) new Notification(`Upcoming: ${event.title}`, { body: `${event.time} - ${event.description || ''}` }); event.hasNotified = true;
+                });
+            });
+        }
+
+        function startNotificationLoop() { 
+            if (notificationInterval) clearInterval(notificationInterval); 
+            notificationInterval = setInterval(checkNotifications, 60000); 
+        }
+
+        // --- LOGIC ---
+        function loadEvents() {
+            const storedEv = localStorage.getItem('uniCalEvents'); // Corrected key
+            if (storedEv) state.events = JSON.parse(storedEv);
+            const storedTasks = localStorage.getItem('uniCalTasks'); // Corrected key
+            if (storedTasks) state.tasks = JSON.parse(storedTasks);
+
+            // Initialize first visit timestamp if not set
+            if (!localStorage.getItem('firstVisitTimestamp')) {
+                localStorage.setItem('firstVisitTimestamp', Date.now().toString());
+            }
+
+            renderApp();
+            startNotificationLoop();
+            startClock();
+            checkTheme(); // Added from index2.html
+            updateStats(); // Added from index2.html
+        }
+
+        function recordState() {
+            if (historyStack.length >= MAX_HISTORY) historyStack.shift();
+            historyStack.push(JSON.stringify({ events: state.events, tasks: state.tasks }));
+            redoStack = []; // Clear redo on new action
+        }
+
+        function performUndo() {
+            if (historyStack.length === 0) return;
+            redoStack.push(JSON.stringify({ events: state.events, tasks: state.tasks }));
+            const prev = JSON.parse(historyStack.pop());
+            state.events = prev.events;
+            state.tasks = prev.tasks;
+            persistState();
+            renderApp();
+        }
+
+        function performRedo() {
+            if (redoStack.length === 0) return;
+            historyStack.push(JSON.stringify({ events: state.events, tasks: state.tasks }));
+            const next = JSON.parse(redoStack.pop());
+            state.events = next.events;
+            state.tasks = next.tasks;
+            persistState();
+            renderApp();
+        }
+
+        function persistState() {
+            localStorage.setItem('uniCalEvents', JSON.stringify(state.events));
+            localStorage.setItem('uniCalTasks', JSON.stringify(state.tasks));
+        }
+
+        function saveEvents() {
+            recordState(); // Snapshot before saving
+            persistState();
+            renderApp();
+        }
+        
+        function saveTasks() {
+            recordState();
+            persistState();
+            renderTasks(); // Renamed from renderTasksSidebar
+            renderGrid();
+        }
+
+        function getDateKey(d) { // Refactored to accept a Date object
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        function updateStats() {
+            let count = 0;
+            const currentMonthStr = String(state.currentDate.getMonth() + 1).padStart(2, '0');
+            Object.keys(state.events).forEach(k => {
+                if (k.includes(`-${currentMonthStr}-`)) count += state.events[k].length;
+            });
+            document.getElementById('stat-event-count').textContent = count;
+        }
+
+        function isDateInRange(dateStr, startStr, endStr) {
+            if (!startStr || !endStr) return false;
+            return dateStr >= startStr && dateStr <= endStr;
+        }
+
+        function parseDateFromText(text) {
+            const today = new Date();
+            let target = new Date();
+            
+            if (text.includes('tomorrow')) target.setDate(today.getDate() + 1);
+            else if (text.includes('today')) { /* keep today */ }
+            else {
+                // Check for days "monday", "friday"
+                const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+                for (let i = 0; i < 7; i++) {
+                    if (text.includes(days[i])) {
+                        const currentDay = today.getDay();
+                        const distance = (i + 7 - currentDay) % 7;
+                        target.setDate(today.getDate() + (distance === 0 ? 7 : distance)); // Next occurrence
+                        break;
+                    }
+                }
+            }
+            return getDateKey(target);
+        }
+
+        function parseTimeFromText(text) {
+            const match = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/);
+            if (match) {
+                let h = parseInt(match[1]);
+                let m = match[2] || '00';
+                const amp = match[3];
+                if (amp === 'pm' && h < 12) h += 12;
+                if (amp === 'am' && h === 12) h = 0;
+                return `${String(h).padStart(2,'0')}:${m}`;
+            }
+            return null;
+        }
+
+        function startClock() {
+            const clockEl = document.getElementById('live-clock');
+            const update = () => {
+                const now = new Date();
+                clockEl.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            };
+            update();
+            clockInterval = setInterval(update, 1000);
+        }
+
+        // --- CONFLICT DETECTION HELPER ---
+        function getConflicts(existingEvents, newEvent = null) {
+            let allEvents = [...existingEvents];
+            if (newEvent) {
+                allEvents.push(newEvent);
+            }
+
+            // Add a default duration of 60 minutes and calculate endTime for each event
+            const eventsWithEndTimes = allEvents.map(event => {
+                const eventTime = event.time || "00:00"; // Provide a default time if undefined
+                const [hours, minutes] = eventTime.split(':').map(Number);
+                const startTime = hours * 60 + minutes; // Convert to minutes from midnight
+                const duration = event.duration || 60; // Assume 60 minutes if not specified
+                const endTime = startTime + duration;
+                return { ...event, startTime, endTime };
+            });
+
+            const conflicts = new Set();
+
+            for (let i = 0; i < eventsWithEndTimes.length; i++) {
+                for (let j = i + 1; j < eventsWithEndTimes.length; j++) {
+                    const eventA = eventsWithEndTimes[i];
+                    const eventB = eventsWithEndTimes[j];
+
+                    // Check for overlap
+                    if (eventA.startTime < eventB.endTime && eventB.startTime < eventA.endTime) {
+                        conflicts.add(eventA.id);
+                        conflicts.add(eventB.id);
+                    }
+                }
+            }
+
+            // Mark events that are in conflict
+            return eventsWithEndTimes.filter(e => conflicts.has(e.id));
+        }
+
+        // --- RENDER ---
+        function renderApp() {
+            renderMiniInfo();
+            renderLegend();
+            renderHeader();
+            renderGrid();
+            renderTasks(); // Renamed from renderTasksSidebar
+            lucide.createIcons();
+        }
+
+        function renderMiniInfo() {
+            const today = new Date();
+            document.getElementById('mini-day-number').textContent = today.getDate();
+            document.getElementById('mini-day-name').textContent = DAYS_SHORT[today.getDay()]; // Using DAYS_SHORT
+            document.getElementById('mini-month-year').textContent = `${MONTHS[today.getMonth()]} ${today.getFullYear()}`;
+        }
+
+        function renderLegend() {
+            const container = document.getElementById('legend-container');
+            container.innerHTML = Object.values(CATEGORIES)
+                .filter(cat => cat.id !== 'multi_end') 
+                .map(cat => `
+                <div class="flex items-center gap-3">
+                    <div class="w-3 h-3 rounded-full ${cat.dot}"></div>
+                    <span class="text-sm text-gray-600 dark:text-gray-400 font-medium">${cat.label}</span>
+                </div>
+            `).join('');
+            
+            const select = document.getElementById('eventCategory');
+            select.innerHTML = Object.values(CATEGORIES)
+                .filter(c => !['imported', 'multi_start', 'multi_end'].includes(c.id))
+                .map(c => `<option value="${c.id}">${c.label}</option>`)
+                .join('');
+        }
+
+        function renderHeader() {
+            const m = state.currentDate.getMonth();
+            const y = state.currentDate.getFullYear();
+            document.getElementById('header-month-title').innerHTML = `${MONTHS[m]} <span class="text-gray-400 dark:text-gray-600">${y}</span>`;
+        }
+
+        function renderGrid() {
+            const grid = document.getElementById('calendar-grid');
+            grid.innerHTML = '';
+
+            const year = state.currentDate.getFullYear();
+            const month = state.currentDate.getMonth();
+            const firstDay = new Date(year, month, 1);
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const prevMonthLastDay = new Date(year, month, 0).getDate();
+            
+            const todayObj = new Date();
+            const todayKey = getDateKey(todayObj);
+
+            const cells = [];
+            for (let i = firstDay.getDay() - 1; i >= 0; i--) cells.push({ day: prevMonthLastDay - i, month: month - 1, year: month === 0 ? year - 1 : year, current: false });
+            for (let i = 1; i <= daysInMonth; i++) cells.push({ day: i, month: month, year: year, current: true });
+            const remaining = 42 - cells.length;
+            for (let i = 1; i <= remaining; i++) cells.push({ day: i, month: month + 1, year: month === 11 ? year + 1 : year, current: false });
+
+            cells.forEach(cell => {
+                const dateKey = getDateKey(new Date(cell.year, cell.month, cell.day));
+                const dayEvents = state.events[dateKey] || [];
+                const dayTasks = state.tasks.filter(t => t.date === dateKey && !t.done);
+                const isToday = dateKey === todayKey;
+                
+                // Conflict Check for Grid visualization (maybe show red dot)
+                const eventsWithConflict = getConflicts(dayEvents);
+                
+                let isHighlighted = false;
+                if (state.highlightRange) {
+                    isHighlighted = isDateInRange(dateKey, state.highlightRange.start, state.highlightRange.end);
+                }
+
+                const el = document.createElement('div');
+                el.className = `
+                    min-h-[100px] border-b border-r border-gray-100 dark:border-gray-800 p-2 relative group cursor-pointer transition-colors
+                    ${!cell.current ? 'bg-gray-50/50 dark:bg-gray-900/30 text-gray-400 dark:text-gray-600' : 'bg-white dark:bg-gray-900 hover:bg-blue-50/30 dark:hover:bg-blue-900/10'}
+                    ${isToday ? 'today-highlight z-10' : ''}
+                    ${isHighlighted ? 'highlight-span bg-purple-50/50 dark:bg-purple-900/20' : ''}
+                `;
+                
+                if (cell.current) {
+                    el.setAttribute('ondragover', 'allowDrop(event)');
+                    el.setAttribute('ondrop', `drop(event, '${dateKey}')`);
+                }
+                
+                el.onclick = (e) => {
+                    if (e.defaultPrevented) return;
+                    openDayView(cell.year, cell.month, cell.day);
+                };
+
+                const displayEvents = dayEvents.slice(0, 3);
+                const moreCount = dayEvents.length - 3;
+
+                // Render Tasks Small Dots
+                let taskHtml = '';
+                if(dayTasks.length > 0) {
+                    taskHtml = `<div class="flex gap-1 mb-1 flex-wrap">
+                        ${dayTasks.slice(0,4).map(t => `<div class="w-1.5 h-1.5 rounded-full border border-gray-400 bg-white dark:bg-gray-700"></div>`).join('')}
+                    </div>`;
+                }
+
+                const eventsHtml = displayEvents.map(ev => {
+                    let cat = Object.values(CATEGORIES).find(c => c.id === ev.category) || CATEGORIES.PERSONAL;
+                    if (ev.isMultiDayStart) cat = CATEGORIES.MULTI_START;
+                    if (ev.isMultiDayEnd) cat = CATEGORIES.MULTI_END;
+                    
+                    const recurIcon = ev.recurrence ? `<i data-lucide="repeat" style="width:8px; display:inline; margin-right:2px;"></i>` : '';
+                    
+                    // Conflict check
+                    const warningIcon = ev.isConflict ? `<i data-lucide="alert-circle" style="width:12px; display:inline; margin-right:4px;" class="text-red-500"></i>` : '';
+
+                    return `<div 
+                        draggable="true" 
+                        ondragstart="drag(event, '${ev.id}', '${dateKey}')"
+                        class="draggable-event text-[10px] px-1.5 py-0.5 mb-1 rounded truncate font-medium border-l-2 ${cat.color}">
+                        ${warningIcon}${recurIcon}${ev.title}
+                    </div>`;
+                }).join('');
+
+                const moreHtml = moreCount > 0 ? `<div class="text-[10px] text-gray-400 dark:text-gray-500 pl-1">+${moreCount} more</div>` : '';
+
+                el.innerHTML = `
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="text-sm font-medium w-7 h-7 flex items-center justify-center rounded-full ${isToday ? 'bg-blue-600 text-white shadow-sm' : 'text-gray-700 dark:text-gray-300'}">
+                            ${cell.day}
+                        </span>
+                        ${taskHtml}
+                    </div>
+                    <div class="mt-1 space-y-0.5">${eventsHtml}${moreHtml}</div>
+                `;
+                grid.appendChild(el);
+            });
+        }
+
+        // --- TASKS LOGIC ---
+        function renderTasks() {
+            const container = document.getElementById('taskList');
+            if(state.tasks.length === 0) {
+                container.innerHTML = `<p class="text-xs text-gray-400 text-center py-2">No pending tasks</p>`;
+                return;
+            }
+            
+            const sorted = [...state.tasks].sort((a,b) => {
+                if(a.done === b.done) return 0;
+                return a.done ? 1 : -1;
+            });
+
+            container.innerHTML = sorted.map(t => `
+                <div class="flex items-start gap-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded group">
+                    <input type="checkbox" ${t.done ? 'checked' : ''} onchange="toggleTask('${t.id}')" class="mt-1 cursor-pointer">
+                    <div class="flex-1 min-w-0">
+                        <p class="text-xs font-medium ${t.done ? 'task-done' : 'text-gray-700 dark:text-gray-300'} truncate">${t.text}</p>
+                        ${t.date ? `<p class="text-[10px] text-gray-400">${t.date}</p>` : ''}
+                    </div>
+                    <button onclick="deleteTask('${t.id}')" class="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500"><i data-lucide="x" class="w-3 h-3"></i></button>
+                </div>
+            `).join('');
+            lucide.createIcons();
+        }
+
+        window.handleTaskSubmit = (e) => {
+            e.preventDefault();
+            const text = document.getElementById('taskTitle').value;
+            const date = document.getElementById('taskDate').value;
+            
+            state.tasks.push({ id: 't_' + Date.now(), text, date, done: false });
+            saveTasks();
+            closeModal('addTaskModal');
+            document.getElementById('taskTitle').value = '';
+        };
+
+        window.toggleTask = (id) => {
+            const t = state.tasks.find(x => x.id === id);
+            if(t) { t.done = !t.done; saveTasks(); }
+        };
+
+        // --- CONFIRMATION ---
+        let pendingAction = null;
+        let pendingActionArgs = null;
+        window.confirmAction = (actionType, args = null) => {
+            pendingAction = actionType;
+            pendingActionArgs = args;
+            let message = "";
+            if (actionType === 'clear_timetable') message = "This will remove all events imported from PDFs.";
+            else if (actionType === 'clear_all') message = "This will delete ALL your events and tasks.";
+            else if (actionType === 'delete_task') message = "This will permanently remove the task.";
+            else if (actionType === 'delete_event') message = "This will permanently remove the event.";
+            else if (actionType === 'delete_events_by_date') message = `This will delete all events for ${args.dateString}.`;
+            else if (actionType === 'delete_tasks_by_date') message = `This will delete all tasks for ${args.dateString}.`;
+            else if (actionType === 'delete_ai_generated_events') message = "This will delete all AI generated events.";
+            else if (actionType === 'delete_imported_events') message = "This will delete all events imported from PDFs.";
+            
+            document.getElementById('confirmMessage').textContent = message;
+            document.getElementById('confirmBtnAction').onclick = () => performConfirmedAction();
+            openModal('confirmModal');
+        };
+
+        function performConfirmedAction() {
+            closeModal('confirmModal');
+            let toastMessage = "Action cancelled.";
+
+            if (pendingAction === 'clear_timetable') {
+                for (const k in state.events) {
+                    state.events[k] = state.events[k].filter(ev => ev.category !== 'imported');
+                    if (state.events[k].length === 0) delete state.events[k];
+                }
+                toastMessage = "All imported events cleared!";
+            } else if (pendingAction === 'clear_all') {
+                state.events = {};
+                state.tasks = [];
+                toastMessage = "Calendar has been reset!";
+            } else if (pendingAction === 'delete_task') {
+                state.tasks = state.tasks.filter(x => x.id !== pendingActionArgs.id);
+                toastMessage = "Task deleted!";
+            } else if (pendingAction === 'delete_event') {
+                const { dateKey, id } = pendingActionArgs;
+                if (state.events[dateKey]) {
+                    state.events[dateKey] = state.events[dateKey].filter(ev => ev.id !== id);
+                    if (state.events[dateKey].length === 0) delete state.events[dateKey];
+                }
+                toastMessage = "Event deleted!";
+            } else if (pendingAction === 'delete_events_by_date') {
+                const { dateKey } = pendingActionArgs;
+                if (typeof dateKey === 'string') {
+                    delete state.events[dateKey];
+                } else if (typeof dateKey === 'object' && dateKey.start && dateKey.end) {
+                    let currentDate = new Date(dateKey.start);
+                    let endDate = new Date(dateKey.end);
+                    while (currentDate <= endDate) {
+                        const dKey = getDateKey(currentDate);
+                        delete state.events[dKey];
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                }
+                toastMessage = `All events for ${pendingActionArgs.dateString} deleted!`;
+            } else if (pendingAction === 'delete_tasks_by_date') {
+                const { dateKey } = pendingActionArgs;
+                if (typeof dateKey === 'string') {
+                    state.tasks = state.tasks.filter(task => task.date !== dateKey);
+                } else if (typeof dateKey === 'object' && dateKey.start && dateKey.end) {
+                    let currentDate = new Date(dateKey.start);
+                    let endDate = new Date(dateKey.end);
+                    const datesToDelete = [];
+                    while (currentDate <= endDate) {
+                        datesToDelete.push(getDateKey(currentDate));
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                    state.tasks = state.tasks.filter(task => !datesToDelete.includes(task.date));
+                }
+                toastMessage = `All tasks for ${pendingActionArgs.dateString} deleted!`;
+            } else if (pendingAction === 'delete_ai_generated_events') {
+                for (const k in state.events) {
+                    state.events[k] = state.events[k].filter(ev => !ev.isSystem);
+                    if (state.events[k].length === 0) delete state.events[k];
+                }
+                toastMessage = "All AI generated events deleted!";
+            } else if (pendingAction === 'delete_imported_events') {
+                for (const k in state.events) {
+                    state.events[k] = state.events[k].filter(ev => ev.category !== 'imported');
+                    if (state.events[k].length === 0) delete state.events[k];
+                }
+                toastMessage = "All imported events deleted!";
+            }
+            saveEvents();
+            saveTasks();
+            renderApp();
+            // Re-render view modal if open and relevant
+            if (!document.getElementById('viewModal').classList.contains('hidden')) renderViewModalContent();
+            showToast(toastMessage, 'success'); // Show success toast
+            pendingAction = null;
+            pendingActionArgs = null;
+        }
+
+        window.deleteTask = (id) => {
+            confirmAction('delete_task', { id });
+        };
+
+        // --- LOCAL NLP HELPERS ---
+        function parseDateFromText(text) {
+            const now = new Date();
+            let targetDate = new Date(now);
+            let dateFound = null;
+
+            const lowerText = text.toLowerCase();
+            const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+
+            if (lowerText.includes('today')) {
+                dateFound = getDateKey(now);
+            } else if (lowerText.includes('tomorrow')) {
+                targetDate.setDate(now.getDate() + 1);
+                dateFound = getDateKey(targetDate);
+            } else if (lowerText.includes('eod') || lowerText.includes('end of day')) {
+                dateFound = getDateKey(now);
+            } else if (lowerText.match(/(?:next|this)\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/)) {
+                const match = lowerText.match(/(?:next|this)\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)/);
+                const dayName = match[1];
+                const dayIndex = daysOfWeek.indexOf(dayName);
+                let currentDay = now.getDay();
+                let diff = dayIndex - currentDay;
+                if (diff < 0 || (lowerText.includes('next') && diff === 0)) {
+                    diff += 7;
+                }
+                targetDate.setDate(now.getDate() + diff);
+                dateFound = getDateKey(targetDate);
+            } else if (lowerText.match(/(\d{1,2}(?:st|nd|rd|th)?)\s+([a-z]{3,9})(?:\s+(\d{4}))?/)) { // e.g., 23rd november, dec 25
+                const match = lowerText.match(/(\d{1,2}(?:st|nd|rd|th)?)\s+([a-z]{3,9})(?:\s+(\d{4}))?/);
+                const day = parseInt(match[1]);
+                const monthName = match[2];
+                const year = match[3] ? parseInt(match[3]) : now.getFullYear();
+                const mIndex = months.findIndex(m => m.startsWith(monthName));
+                if (mIndex !== -1) {
+                    targetDate = new Date(year, mIndex, day);
+                    dateFound = getDateKey(targetDate);
+                }
+            } else if (lowerText.match(/(\d{4}-\d{2}-\d{2})/)) { // YYYY-MM-DD format
+                const match = lowerText.match(/(\d{4}-\d{2}-\d{2})/);
+                dateFound = match[1];
+            }
+
+            return dateFound; // Return YYYY-MM-DD or null
+        }
+
+        function parseTimeFromText(text) {
+            let timeFound = null;
+            const lowerText = text.toLowerCase();
+            
+            const timeRegex = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/;
+            const match = lowerText.match(timeRegex);
+            if (match) {
+                let h = parseInt(match[1]);
+                let m = match[2] || "00";
+                const ampm = match[3];
+
+                if (ampm) {
+                    if (ampm === 'pm' && h < 12) h += 12;
+                    if (ampm === 'am' && h === 12) h = 0;
+                }
+                timeFound = `${String(h).padStart(2,'0')}:${m}`;
+            }
+            return timeFound; // Return HH:MM or null
+        }
+
+        // --- NATURAL LANGUAGE PARSER (Chrono AI) ---
+        window.handleNLPInput = async (e) => {
+            if(e.key !== 'Enter') return;
+            const text = document.getElementById('nlpInput').value;
+            if(!text.trim()) return;
+
+            // Check for Task
+            if (text.toLowerCase().startsWith('task') || text.toLowerCase().startsWith('todo')) {
+                let taskTextRaw = text.replace(/^(task|todo)\s+/i, '').trim();
+                let taskText = taskTextRaw; // Default to raw task text
+                let dueDate = null;
+                const now = new Date();
+                let tempDate = new Date(now);
+
+                // Attempt to extract date from taskTextRaw
+                const datePhraseMatch = taskTextRaw.match(/(?:on|by|for)?\s*(this\s+(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)|tomorrow|today|eod|end of day|next\s+(?:sunday|monday|tuesday|wednesday|thursday|friday|saturday)|\d{1,2}(?:st|nd|rd|th)?\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+\d{4})?)/i);
+
+                if (datePhraseMatch) {
+                    const dateQualifier = datePhraseMatch[0].toLowerCase();
+                    taskText = taskTextRaw.replace(datePhraseMatch[0], '').trim(); // Remove date phrase from task text
+
+                    if (dateQualifier.includes('today')) {
+                        dueDate = getDateKey(now);
+                    } else if (dateQualifier.includes('tomorrow')) {
+                        tempDate.setDate(now.getDate() + 1);
+                        dueDate = getDateKey(tempDate);
+                    } else if (dateQualifier.includes('eod') || dateQualifier.includes('end of day')) {
+                        dueDate = getDateKey(now);
+                    } else if (dateQualifier.includes('this ') || dateQualifier.includes('next ')) {
+                        const dayName = dateQualifier.replace(/^(?:this|next)\s+/i, '').trim();
+                        const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                        const dayMatchIndex = daysOfWeek.indexOf(dayName);
+                        if (dayMatchIndex !== -1) {
+                            let currentDay = now.getDay();
+                            let diff = dayMatchIndex - currentDay;
+                            if (diff < 0 || (dateQualifier.includes('next ') && diff === 0)) {
+                                diff += 7; // Get next occurrence of this day
+                            }
+                            tempDate.setDate(now.getDate() + diff);
+                            dueDate = getDateKey(tempDate);
+                        }
+                    } else {
+                        // Try to parse a specific date like "23rd november" or "dec 25"
+                        const specificDateMatch = dateQualifier.match(/(\d{1,2}(?:st|nd|rd|th)?)\s+([a-z]{3,9})(?:\s+(\d{4}))?/i);
+                        if (specificDateMatch) {
+                            const day = parseInt(specificDateMatch[1]);
+                            const monthName = specificDateMatch[2];
+                            const year = specificDateMatch[3] ? parseInt(specificDateMatch[3]) : now.getFullYear();
+                            const mIndex = MONTHS.findIndex(m => m.toLowerCase().startsWith(monthName.toLowerCase()));
+                            if (mIndex !== -1) {
+                                tempDate = new Date(year, mIndex, day);
+                                dueDate = getDateKey(tempDate);
+                            }
+                        }
+                    }
+                }
+                
+                if (taskText.length === 0) taskText = taskTextRaw; // Fallback if date extraction made taskText empty
+                if (taskText.length === 0) taskText = "New Task"; // Final fallback
+
+                // Add console logs for debugging
+                console.log("Simple Task Parsed: ", { taskText, dueDate });
+                state.tasks.push({ id: 't_nlp_'+Date.now(), text: taskText, date: dueDate, done: false });
+                console.log("Tasks after adding: ", state.tasks);
+
+                saveTasks();
+                document.getElementById('nlpInput').value = '';
+                showToast("Task added!", 'success');
+                return;
+            }
+
+            // --- Hardcoded Delete Command ---
+            const lowerText = text.toLowerCase(); // Moved lowerText definition up
+            if (lowerText.startsWith('delete') || lowerText.startsWith('clear')) {
+                let targetType = null;
+                let date = null;
+                let dateString = null;
+                let rawDateQualifier = null;
+
+                const deleteEventsForMatch = lowerText.match(/delete (all )?events (for|on) (.+)/);
+                const deleteTasksForMatch = lowerText.match(/delete (all )?tasks (for|on) (.+)/);
+
+                if (deleteEventsForMatch) {
+                    targetType = 'events';
+                    rawDateQualifier = deleteEventsForMatch[3].trim();
+                } else if (deleteTasksForMatch) {
+                    targetType = 'tasks';
+                    rawDateQualifier = deleteTasksForMatch[3].trim();
+                } else if (lowerText.includes('all ai generated events')) {
+                    targetType = 'ai generated events';
+                } else if (lowerText.includes('all pdf parsed events')) {
+                    targetType = 'imported events';
+                } else if (lowerText.includes('all events') || lowerText.includes('all calendar')) {
+                    targetType = 'all';
+                } else if (lowerText.includes('all tasks')) {
+                    targetType = 'all tasks';
+                }
+
+                console.log("Delete Command - rawDateQualifier:", rawDateQualifier); // Debug
+
+                if (rawDateQualifier) {
+                    date = parseDateFromText(rawDateQualifier); // Use the new parseDateFromText
+                    console.log("Delete Command - parsed date from rawDateQualifier:", date); // Debug
+
+                    if (date) {
+                        // Format dateString for display using Date object
+                        const dObj = new Date(date);
+                        dateString = `${dObj.getDate()} ${MONTHS[dObj.getMonth()]} ${dObj.getFullYear()}`;
+                    } else {
+                        // If date not parsed by hardcoded, fallback to original qualifier for Gemini or error
+                        dateString = rawDateQualifier;
+                    }
+                }
+
+                console.log("Delete Command - final date and dateString:", { date, dateString }); // Debug
+
+                if (targetType === 'events' && date) {
+                    confirmAction('delete_events_by_date', { dateKey: date, dateString: dateString });
+                } else if (targetType === 'tasks' && date) {
+                    confirmAction('delete_tasks_by_date', { dateKey: date, dateString: dateString });
+                } else if (targetType === 'ai generated events') {
+                    confirmAction('delete_ai_generated_events');
+                } else if (targetType === 'imported events') {
+                    confirmAction('delete_imported_events');
+                } else if (targetType === 'all') {
+                    confirmAction('clear_all');
+                } else if (targetType === 'all tasks') {
+                    confirmAction('clear_all'); // clear_all also clears tasks
+                } else {
+                    showToast("Chrono AI couldn't understand the delete command. Try: 'delete all events for tomorrow'", 'error');
+                }
+                document.getElementById('nlpInput').value = '';
+                return;
+            }
+
+            // --- Hardcoded Event Creation ---
+            // const lowerText = text.toLowerCase(); // Moved lowerText definition up
+            let isSimpleEvent = false; // Flag to determine if it's a hardcoded event
+            let eventTitle = text; // Start with the full text as title
+            let eventDate = null;
+            let eventTime = null;
+            let eventCategory = 'personal';
+
+            // Try to parse date and time first
+            const parsedDate = parseDateFromText(lowerText);
+            const parsedTime = parseTimeFromText(lowerText);
+
+            if (parsedDate || parsedTime) {
+                isSimpleEvent = true;
+                eventDate = parsedDate; // Assign parsed date
+                eventTime = parsedTime; // Assign parsed time
+
+                // Start with the full text, then remove identified date/time components
+                let tempTitle = text;
+
+                // Remove parsed date from title
+                if (eventDate) {
+                    const dateParts = eventDate.split('-'); // YYYY-MM-DD
+                    const year = dateParts[0];
+                    const month = parseInt(dateParts[1]) - 1; // 0-indexed month
+                    const day = dateParts[2];
+
+                    const possibleDateFormats = [
+                        new RegExp(`(?:on|by|for)?\s*(?:${day}(?:st|nd|rd|th)?\s+${MONTHS[month]}\s+${year})`, 'i'), // e.g., on 23rd November 2025
+                        new RegExp(`(?:on|by|for)?\s*(?:${MONTHS[month]}\s+${day}(?:st|nd|rd|th)?(?:,\s*${year})?)`, 'i'), // e.g., on November 23rd
+                        new RegExp(`(?:on|by|for)?\s*(?:${year}[-\/]${dateParts[1]}[-\/]${day})`, 'i'), // e.g., on 2025-11-23
+                        new RegExp(`(?:on|by|for)?\s*(?:today|tomorrow|eod|end of day)`, 'i'),
+                        new RegExp(`(?:next|this)\s+(sunday|monday|tuesday|wednesday|thursday|friday|saturday)`, 'i'),
+                    ];
+
+                    for (const regex of possibleDateFormats) {
+                        if (tempTitle.match(regex)) {
+                            tempTitle = tempTitle.replace(regex, '').trim();
+                            break;
+                        }
+                    }
+                }
+
+                // Remove parsed time from title
+                if (eventTime) {
+                    const [h, m] = eventTime.split(':');
+                    const hour12 = (parseInt(h) % 12) || 12;
+                    const ampm = parseInt(h) >= 12 ? 'pm' : 'am';
+                    const possibleTimeFormats = [
+                        new RegExp(`(?:at)?\s*(?:${h}:${m}\s*(?:am|pm)?)`, 'i'), // e.g., at 14:00, 02:00pm
+                        new RegExp(`(?:at)?\s*(?:${hour12}(?::${m})?\s*${ampm}?)`, 'i'), // e.g., at 2pm, 2:00pm
+                    ];
+                    for (const regex of possibleTimeFormats) {
+                        if (tempTitle.match(regex)) {
+                            tempTitle = tempTitle.replace(regex, '').trim();
+                            break;
+                        }
+                    }
+                }
+                
+                // Additional cleanup for common time/date related words not caught by specific parsing
+                tempTitle = tempTitle
+                    .replace(/\b(on|at|for|this|next)\b/g, '') // remove prepositions
+                    .replace(/\s+/g, ' ') // reduce multiple spaces
+                    .trim();
+                
+                eventTitle = tempTitle; // Assign the cleaned title
+            }
+
+            // console.log("Hardcoded Event Check:", {isSimpleEvent, eventTitle, eventDate, eventTime}); // Debug log
+
+            if (isSimpleEvent) {
+                // Ensure title is not empty after cleaning
+                if (eventTitle.length === 0) eventTitle = "New Event";
+                if (eventTitle === "undefined") eventTitle = "New Event"; // Explicitly handle "undefined" as a string
+
+                const newEvent = {
+                    id: 'evt_hardcode_' + Date.now(),
+                    title: eventTitle.charAt(0).toUpperCase() + eventTitle.slice(1),
+                    category: eventCategory,
+                    time: eventTime || '09:00',
+                    date: eventDate || getDateKey(new Date()), // Default to today if no date found
+                    isSystem: false,
+                    notifyMinutes: 0,
+                    hasNotified: false,
+                    recurrence: null,
+                    recurrencePattern: null
+                };
+
+                // Check for conflicts before adding
+                const conflicts = getConflicts(state.events[newEvent.date] || [], newEvent);
+
+                if (conflicts.length > 0) {
+                    openConflictResolutionModal(newEvent, conflicts);
+                    document.getElementById('nlpInput').value = '';
+                    return; // Stop here, wait for user to resolve conflict
+                }
+
+                // Add the event
+                addEvent(newEvent.date, newEvent);
+                document.getElementById('nlpInput').value = '';
+                showToast(`Event Created: "${newEvent.title}" on ${newEvent.date} at ${newEvent.time}`, 'success');
+                return;
+            }
+
+            // --- Hardcoded Delete Command ---
+            if (lowerText.startsWith('delete') || lowerText.startsWith('clear')) {
+                let targetType = null;
+                let date = null;
+                let dateString = null;
+                let rawDateQualifier = null; // Store the raw date phrase for parsing
+
+                const deleteEventsForMatch = lowerText.match(/delete (all )?events (for|on) (.+)/);
+                const deleteTasksForMatch = lowerText.match(/delete (all )?tasks (for|on) (.+)/);
+
+                if (deleteEventsForMatch) {
+                    targetType = 'events';
+                    rawDateQualifier = deleteEventsForMatch[3].trim();
+                } else if (deleteTasksForMatch) {
+                    targetType = 'tasks';
+                    rawDateQualifier = deleteTasksForMatch[3].trim();
+                } else if (lowerText.includes('all ai generated events')) {
+                    targetType = 'ai generated events';
+                } else if (lowerText.includes('all pdf parsed events')) {
+                    targetType = 'imported events';
+                } else if (lowerText.includes('all events') || lowerText.includes('all calendar')) {
+                    targetType = 'all';
+                } else if (lowerText.includes('all tasks')) {
+                    targetType = 'all tasks';
+                }
+
+                console.log("Delete Command - rawDateQualifier:", rawDateQualifier); // Debug
+
+                if (rawDateQualifier) {
+                    date = parseDateFromText(rawDateQualifier); // Use the new parseDateFromText
+                    console.log("Delete Command - parsed date from rawDateQualifier:", date); // Debug
+
+                    if (date) {
+                        // Format dateString for display using Date object
+                        const dObj = new Date(date);
+                        dateString = `${dObj.getDate()} ${MONTHS[dObj.getMonth()]} ${dObj.getFullYear()}`;
+                    } else {
+                        // If date not parsed by hardcoded, fallback to original qualifier for Gemini or error
+                        dateString = rawDateQualifier;
+                    }
+                }
+
+                console.log("Delete Command - final date and dateString:", { date, dateString }); // Debug
+
+                if (targetType === 'events' && date) {
+                    confirmAction('delete_events_by_date', { dateKey: date, dateString: dateString });
+                } else if (targetType === 'tasks' && date) {
+                    confirmAction('delete_tasks_by_date', { dateKey: date, dateString: dateString });
+                } else if (targetType === 'ai generated events') {
+                    confirmAction('delete_ai_generated_events');
+                } else if (targetType === 'imported events') {
+                    confirmAction('delete_imported_events');
+                } else if (targetType === 'all') {
+                    confirmAction('clear_all');
+                } else if (targetType === 'all tasks') {
+                    confirmAction('clear_all'); // clear_all also clears tasks
+                } else {
+                    showToast("Chrono AI couldn't understand the delete command. Try: 'delete all events for tomorrow'", 'error');
+                }
+                document.getElementById('nlpInput').value = '';
+                return;
+            }
+
+            // Check for Delete Command (Gemini API fallback)
+            const parsedCommandForDelete = await parseNaturalLanguage(text, false, true, false);
+
+            if (parsedCommandForDelete && parsedCommandForDelete.commandType === 'delete') {
+                const deleteType = parsedCommandForDelete.targetType;
+                const dateToDelete = parsedCommandForDelete.date;
+                const dateString = parsedCommandForDelete.dateString;
+                let actionType = null;
+
+                if (deleteType === 'events' && dateToDelete) {
+                    actionType = 'delete_events_by_date';
+                    confirmAction(actionType, { dateKey: dateToDelete, dateString: dateString });
+                } else if (deleteType === 'tasks' && dateToDelete) {
+                    actionType = 'delete_tasks_by_date';
+                    confirmAction(actionType, { dateKey: dateToDelete, dateString: dateString });
+                } else if (deleteType === 'ai generated events') {
+                    actionType = 'delete_ai_generated_events';
+                    confirmAction(actionType);
+                } else if (deleteType === 'pdf parsed events') {
+                    actionType = 'delete_imported_events';
+                    confirmAction(actionType);
+                } else {
+                    showToast("Chrono AI couldn't understand the delete command. Try: 'delete all events for tomorrow'", 'error');
+                }
+                document.getElementById('nlpInput').value = '';
+                return;
+            }
+
+            // Check for Summarize Command
+            const parsedCommandForSummary = await parseNaturalLanguage(text, false, false, true); // isTask=false, isDeleteCommand=false, isSummaryCommand=true
+
+            if (parsedCommandForSummary && parsedCommandForSummary.commandType === 'summarize') {
+                const dateOrRange = parsedCommandForSummary.date;
+                let summaryTitle = `Summary for ${parsedCommandForSummary.dateString || 'this period'}`;
+
+                if (dateOrRange) {
+                    generateSummary(dateOrRange, summaryTitle);
+                } else {
+                    showToast("Chrono AI couldn't understand the summary date/range. Try: 'summarize today' or 'summarize next week'", 'error');
+                }
+                document.getElementById('nlpInput').value = '';
+                return;
+            }
+
+            // Event Parsing
+            const parsed = await parseNaturalLanguage(text);
+            if(parsed) {
+                // Create base event from parsed data
+                const baseEvent = {
+                    id: 'evt_nlp_' + Date.now(),
+                    title: parsed.title,
+                    category: parsed.category,
+                    time: parsed.time,
+                    date: parsed.date,
+                    isSystem: false,
+                    notifyMinutes: 0,
+                    hasNotified: false,
+                    recurrence: null, // Simple recurrence handled by dropdown in AddModal
+                    recurrencePattern: parsed.recurrencePattern // Store the complex pattern if any
+                };
+
+                const eventToAdd = {
+                    id: baseEvent.id,
+                    title: baseEvent.title,
+                    category: baseEvent.category,
+                    time: baseEvent.time,
+                    description: baseEvent.description,
+                    date: baseEvent.date,
+                    isSystem: baseEvent.isSystem,
+                    notifyMinutes: baseEvent.notifyMinutes,
+                    hasNotified: baseEvent.hasNotified,
+                    recurrence: baseEvent.recurrence,
+                    recurrencePattern: baseEvent.recurrencePattern
+                };
+
+                // Store the event being considered globally for conflict resolution
+                window.currentNewEvent = eventToAdd;
+
+                // Check for conflicts before adding
+                const conflicts = getConflicts(state.events[parsed.date] || [], eventToAdd);
+
+                if (conflicts.length > 0) {
+                    openConflictResolutionModal(eventToAdd, conflicts);
+                    return; // Stop here, wait for user to resolve conflict
+                }
+
+                if (parsed.recurrencePattern) {
+                    // Handle complex recurrence from NLP
+                    addRecurringEvents(baseEvent, parsed.recurrencePattern);
+                    showToast(`Recurring Event Created: "${parsed.title}" starting on ${parsed.date}`, 'success');
+                } else {
+                    // Handle single event or simple recurrence from NLP (if 'recurrence' field was also parsed directly)
+                    // For now, assuming direct NLP parsing only sets `recurrencePattern` for complex ones.
+                    // Simple daily/weekly/monthly from NLP can also be handled here by setting `baseEvent.recurrence` if `parseNaturalLanguage` returns it.
+                    if (!state.events[parsed.date]) state.events[parsed.date] = [];
+                    state.events[parsed.date].push(baseEvent);
+                    showToast(`Event Created: "${parsed.title}" on ${parsed.date} at ${parsed.time}`, 'success');
+                }
+
+                saveEvents();
+                document.getElementById('nlpInput').value = '';
+                renderApp();
+            } else {
+                showToast("Chrono AI couldn't understand the date/time. Try: 'Meeting Friday at 2pm'", 'error');
+            }
+        };
+
+        // Helper to add recurring events based on complex patterns
+        function addRecurringEvents(baseEvent, pattern) {
+            let current = new Date(baseEvent.date);
+            const limit = 10; // Default limit for NLP created recurring events
+            let count = 0;
+
+            const pushEvent = (dKey, evt) => {
+                if (!state.events[dKey]) state.events[dKey] = [];
+                state.events[dKey].push(evt);
+            };
+
+            while (count < limit) {
+                const dKey = getDateKey(current);
+                const clone = { ...baseEvent, id: baseEvent.id + '_r' + count, date: dKey, isRecurrence: true };
+                pushEvent(dKey, clone);
+                count++;
+
+                // Advance date based on pattern
+                if (pattern.type === 'biweekly') {
+                    current.setDate(current.getDate() + 14);
+                } else if (pattern.type === 'custom_weekly') {
+                    current.setDate(current.getDate() + (pattern.interval * 7));
+                } else if (pattern.type === 'monthly' && pattern.weekOfMonth === 'last') {
+                    // For last Friday of month, advance to next month, then find last Friday
+                    current.setMonth(current.getMonth() + 1);
+                    current.setDate(0); // Set to last day of previous month
+                    current.setDate(current.getDate() + 1); // Set to 1st of current month
+                    current.setMonth(current.getMonth() + 1); // Go to next month
+                    current.setDate(0); // Last day of this (next) month
+                    while(current.getDay() !== pattern.dayOfWeek) { current.setDate(current.getDate() - 1); }
+                } else if (pattern.type === 'weekly') {
+                    current.setDate(current.getDate() + 7);
+                } else {
+                    // Fallback to simple daily for unrecognized complex patterns, or if pattern specifies a daily interval
+                    current.setDate(current.getDate() + 1);
+                }
+            }
+        }
+
+        async function parseNaturalLanguage(input, isTask = false, isDeleteCommand = false, isSummaryCommand = false) {
+            const now = new Date();
+            const lowerInput = input.toLowerCase();
+            const currentYear = now.getFullYear();
+
+            // Special handling for delete and summarize commands
+            if (isDeleteCommand || isSummaryCommand) {
+                const prompt = `Given the command: "${input}", extract the 'commandType' (either 'delete' or 'summarize'), 'targetType' (e.g., 'events', 'tasks', 'ai generated events', 'pdf parsed events'), and 'dateQualifier' (e.g., 'today', 'tomorrow', 'this week', 'next friday', '2025-11-23'). Return an empty object if the command is not understood. The current date is ${new Date().toISOString().split('T')[0]}.\n\nRespond with a JSON object only.`;
+                
+                try {
+                    const geminiResponseText = await callGeminiAPI(prompt);
+                    const cleanJsonString = geminiResponseText.match(/```json\n([\s\S]*?)\n```/) ? geminiResponseText.match(/```json\n([\s\S]*?)\n```/)[1] : geminiResponseText;
+                    const parsedCommand = JSON.parse(cleanJsonString);
+
+                    if (parsedCommand && parsedCommand.dateQualifier) {
+                        const { date, dateString } = processGeminiDateQualifier(parsedCommand.dateQualifier);
+                        return { ...parsedCommand, date, dateString };
+                    } else if (parsedCommand && !parsedCommand.dateQualifier) {
+                        return { ...parsedCommand, date: null, dateString: null };
+                    }
+                    return null;
+                } catch (error) {
+                    console.error("Gemini NLP error for command parsing:", error);
+                    showToast("Chrono AI couldn't process the command. Please try again.", 'error');
+                    return null;
+                }
+            }
+
+            // Generic event/task parsing
+            const prompt = `Parse the following natural language input into a structured JSON object representing an event or task. \n\nInput: "${input}"\n\nExtract the following fields:\n- 'title': The name of the event/task.\n- 'date': The date in YYYY-MM-DD format. Default to today if not specified. The current date is ${new Date().toISOString().split('T')[0]}.\n- 'time': The time in HH:MM (24-hour) format. Default to 09:00 if not specified.\n- 'category': Choose from 'academic', 'personal', 'work', 'important', 'imported'. Default to 'personal'.\n- 'description': A more detailed description if available.\n- 'duration': Duration in minutes. Default to 60 minutes.\n- 'recurrence': 'daily', 'weekly', 'biweekly', 'monthly', or 'none'. Default to 'none'.\n- 'isMultiDayStart': boolean, true if the event explicitly spans multiple days (e.g., "from X to Y").\n- 'endDateRef': The end date in YYYY-MM-DD format if it's a multi-day event.\n- 'isTask': boolean, true if the input clearly indicates a task (e.g., "Task buy milk").\n\nIf the input cannot be parsed into a meaningful event/task, return an empty object. Consider phrases like "every X weeks", "last Friday of the month".\n\nRespond with a JSON object only.`;
+
+            let parsed = null;
+            try {
+                const geminiResponseText = await callGeminiAPI(prompt);
+                console.log("Gemini NLP Response (Event/Task):\n", geminiResponseText);
+                const jsonMatch = geminiResponseText.match(/```json\n([\s\S]*?)\n```/);
+                const cleanJsonString = jsonMatch ? jsonMatch[1] : geminiResponseText;
+                parsed = JSON.parse(cleanJsonString);
+            } catch (error) {
+                console.error("Gemini NLP error for event/task parsing, falling back:", error);
+                showToast("AI parsing failed, falling back to basic parsing.", 'warning');
+            }
+
+            // Fallback parsing if Gemini API fails or returns no meaningful data
+            if (!parsed || Object.keys(parsed).length === 0) {
+                let fallbackTitle = input;
+                let fallbackDate = now.toISOString().split('T')[0];
+                let fallbackTime = '09:00';
+                let fallbackCategory = 'personal';
+                let fallbackRecurrencePattern = null;
+                let isFallbackTask = isTask; // Keep the original `isTask` for fallback
+
+                // Simplified time extraction for fallback
+                const timeRegex = /(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i;
+                const timeMatch = input.match(timeRegex);
+                if(timeMatch) {
+                    let h = parseInt(timeMatch[1]);
+                    let m = timeMatch[2] || "00";
+                    const ampm = timeMatch[3];
+                    if(ampm) {
+                        if(ampm.toLowerCase() === 'pm' && h < 12) h += 12;
+                        if(ampm.toLowerCase() === 'am' && h === 12) h = 0;
+                    }
+                    fallbackTime = `${String(h).padStart(2,'0')}:${m}`;
+                    fallbackTitle = fallbackTitle.replace(timeMatch[0], '').trim();
+                }
+
+                // Simplified date extraction for fallback
+                const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+                let tempTargetDate = new Date(now);
+                const dayMatch = lowerInput.match(/every (\d+)?\s*(?:other\s*)?(day|week|month|year)s?|every (other )?(monday|tuesday|wednesday|thursday|friday|saturday|sunday)/);
+                if (dayMatch) {
+                    if (dayMatch[3]) { // specific day, e.g., "every other Tuesday"
+                        const dayName = dayMatch[4];
+                        const dayIndex = days.indexOf(dayName);
+                        if (dayIndex > -1) {
+                            let currentDay = now.getDay();
+                            let diff = dayIndex - currentDay;
+                            if (diff < 0) diff += 7;
+                            tempTargetDate.setDate(now.getDate() + diff); // Set to the first upcoming specified day
+
+                            if (dayMatch[3].includes('other')) {
+                                fallbackRecurrencePattern = { type: 'biweekly', dayOfWeek: dayIndex };
+                                fallbackTitle = fallbackTitle.replace(new RegExp(`every other ${dayName}`, 'i'), '').trim();
+                            } else {
+                                fallbackRecurrencePattern = { type: 'weekly', dayOfWeek: dayIndex };
+                                fallbackTitle = fallbackTitle.replace(new RegExp(`every ${dayName}`, 'i'), '').trim();
+                            }
+                        }
+                    }
+                } else if (lowerInput.includes('tomorrow')) {
+                    tempTargetDate.setDate(now.getDate() + 1);
+                    fallbackTitle = fallbackTitle.replace(/tomorrow/i, '').trim();
+                } else if (lowerInput.includes('today')) {
+                    fallbackTitle = fallbackTitle.replace(/today/i, '').trim();
+                }
+
+                fallbackDate = getDateKey(tempTargetDate);
+
+                // Fallback categorization
+                if (lowerInput.match(/(study|class|lecture|exam|assignment)/)) fallbackCategory = 'academic';
+                else if (lowerInput.match(/(meeting|sync|call|work|review)/)) fallbackCategory = 'work';
+                else if (lowerInput.match(/(gym|workout|party|dinner|lunch)/)) fallbackCategory = 'personal';
+
+                // Final fallback title cleanup
+                fallbackTitle = fallbackTitle.replace(/\bat\b/i, '').replace(/\bon\b/i, '').trim();
+                if (fallbackTitle.length === 0) fallbackTitle = isFallbackTask ? "New Task" : "New Event";
+
+                parsed = {
+                    title: fallbackTitle.charAt(0).toUpperCase() + fallbackTitle.slice(1),
+                    date: fallbackDate,
+                    time: fallbackTime,
+                    category: fallbackCategory,
+                    recurrencePattern: fallbackRecurrencePattern,
+                    isTask: isFallbackTask
+                };
+            }
+
+            if (parsed && Object.keys(parsed).length > 0) {
+                if (parsed.date && !/^\d{4}-\d{2}-\d{2}$/.test(parsed.date)) {
+                    console.warn("Invalid date format from parser, defaulting to today:", parsed.date);
+                    parsed.date = now.toISOString().split('T')[0];
+                }
+                if (parsed.time && !/^\d{2}:\d{2}$/.test(parsed.time)) {
+                    console.warn("Invalid time format from parser, defaulting to 09:00:", parsed.time);
+                    parsed.time = '09:00';
+                }
+                const categoryId = Object.values(CATEGORIES).some(cat => cat.id === parsed.category) ? parsed.category : 'personal';
+                parsed.category = categoryId;
+                if (parsed.isTask === true && !isTask) {
+                    return { isTask: true, text: parsed.title, date: parsed.date };
+                }
+                return parsed;
+            }
+            return null;
+        }
+
+        // Helper to process Gemini's date qualifier for delete/summary commands
+        function processGeminiDateQualifier(qualifier) {
+            const nowCopy = new Date();
+            let tempDate = new Date(nowCopy);
+            let dateResult = null;
+            let dateStringResult = qualifier;
+
+            // This logic is simplified as Gemini should provide clear qualifiers
+            const lowerQualifier = qualifier.toLowerCase();
+
+            if (lowerQualifier.includes('today')) {
+                dateResult = getDateKey(nowCopy);
+                dateStringResult = "today";
+            } else if (lowerQualifier.includes('tomorrow')) {
+                tempDate.setDate(nowCopy.getDate() + 1);
+                dateResult = getDateKey(tempDate);
+                dateStringResult = "tomorrow";
+            } else if (lowerQualifier.includes('this week')) {
+                const firstDayOfWeek = new Date(nowCopy);
+                firstDayOfWeek.setDate(nowCopy.getDate() - nowCopy.getDay());
+                const lastDayOfWeek = new Date(firstDayOfWeek);
+                lastDayOfWeek.setDate(firstDayOfWeek.getDate() + 6);
+                dateResult = { start: getDateKey(firstDayOfWeek), end: getDateKey(lastDayOfWeek) };
+                dateStringResult = "this week";
+            } else if (lowerQualifier.includes('last week')) {
+                tempDate.setDate(nowCopy.getDate() - 7);
+                const firstDayOfLastWeek = new Date(tempDate);
+                firstDayOfLastWeek.setDate(tempDate.getDate() - tempDate.getDay());
+                const lastDayOfLastWeek = new Date(firstDayOfLastWeek);
+                lastDayOfLastWeek.setDate(firstDayOfLastWeek.getDate() + 6);
+                dateResult = { start: getDateKey(firstDayOfLastWeek), end: getDateKey(lastDayOfLastWeek) };
+                dateStringResult = "last week";
+            } else if (lowerQualifier.includes('next week')) {
+                tempDate.setDate(nowCopy.getDate() + 7);
+                const firstDayOfNextWeek = new Date(tempDate);
+                firstDayOfNextWeek.setDate(tempDate.getDate() - tempDate.getDay());
+                const lastDayOfNextWeek = new Date(firstDayOfNextWeek);
+                lastDayOfNextWeek.setDate(firstDayOfNextWeek.getDate() + 6);
+                dateResult = { start: getDateKey(firstDayOfNextWeek), end: getDateKey(lastDayOfNextWeek) };
+                dateStringResult = "next week";
+            } else if (lowerQualifier.includes('this month')) {
+                const firstDayOfMonth = new Date(nowCopy.getFullYear(), nowCopy.getMonth(), 1);
+                const lastDayOfMonth = new Date(nowCopy.getFullYear(), nowCopy.getMonth() + 1, 0);
+                dateResult = { start: getDateKey(firstDayOfMonth), end: getDateKey(lastDayOfMonth) };
+                dateStringResult = "this month";
+            } else if (lowerQualifier.includes('last month')) {
+                const firstDayOfLastMonth = new Date(nowCopy.getFullYear(), nowCopy.getMonth() - 1, 1);
+                const lastDayOfLastMonth = new Date(nowCopy.getFullYear(), nowCopy.getMonth(), 0);
+                dateResult = { start: getDateKey(firstDayOfLastMonth), end: getDateKey(lastDayOfLastMonth) };
+                dateStringResult = "last month";
+            } else if (lowerQualifier.includes('next month')) {
+                const firstDayOfNextMonth = new Date(nowCopy.getFullYear(), nowCopy.getMonth() + 1, 1);
+                const lastDayOfNextMonth = new Date(nowCopy.getFullYear(), nowCopy.getMonth() + 2, 0);
+                dateResult = { start: getDateKey(firstDayOfNextMonth), end: getDateKey(lastDayOfNextMonth) };
+                dateStringResult = "next month";
+            } else if (lowerQualifier.match(/^(sunday|monday|tuesday|wednesday|thursday|friday|saturday)$/)) {
+                const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+                const dayMatchIndex = daysOfWeek.indexOf(lowerQualifier);
+                
+                let dayDate = new Date(nowCopy);
+                let currentDay = dayDate.getDay();
+                let diff = dayMatchIndex - currentDay;
+                if (diff <= 0) {
+                    diff += 7;
+                }
+                dayDate.setDate(nowCopy.getDate() + diff);
+                dateResult = getDateKey(dayDate);
+                dateStringResult = daysOfWeek[dayMatchIndex];
+            } else if (/^\d{4}-\d{2}-\d{2}$/.test(lowerQualifier)) { // Specific YYYY-MM-DD date
+                dateResult = lowerQualifier;
+                try {
+                    const d = new Date(lowerQualifier);
+                    dateStringResult = `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+                } catch (e) { /* ignore */ }
+            } else {
+                // Try to parse a specific date using a more general regex if not a keyword
+                const specificDateRegex = /(\d{1,2}(?:\/|-|\s)[a-z]{3,9}(?:\/|-|\s)?\d{0,4})/; // e.g., 23 Nov 2025, 23/11, Nov 23
+                const specificDateMatch = qualifier.match(specificDateRegex);
+                if (specificDateMatch) {
+                    try {
+                        const datePart = specificDateMatch[0];
+                        const tempParsedDate = new Date(datePart);
+                        if (!isNaN(tempParsedDate)) {
+                            dateResult = getDateKey(tempParsedDate);
+                            dateStringResult = `${tempParsedDate.getDate()} ${MONTHS[tempParsedDate.getMonth()]} ${tempParsedDate.getFullYear()}`;
+                        }
+                    } catch (e) { /* ignore parsing errors */ }
+                }
+            }
+            return { date: dateResult, dateString: dateStringResult };
+        }
+
+        // --- OPTIMIZATION MODAL & LOGIC ---
+        window.openOptimizationModal = () => {
+            document.getElementById('optimizationModal').classList.remove('hidden');
+            document.getElementById('optimizationResults').classList.add('hidden');
+            document.getElementById('optimizationResults').innerHTML = '';
+        };
+
+        window.findSmartSlots = (durationMinutes) => {
+            const resultsContainer = document.getElementById('optimizationResults');
+            resultsContainer.innerHTML = '<div class="text-center py-2"><div class="loader border-purple-500 border-t-transparent mx-auto"></div></div>';
+            resultsContainer.classList.remove('hidden');
+
+            setTimeout(() => {
+                const slots = [];
+                const workStart = 9; // 9 AM
+                const workEnd = 18; // 6 PM
+                let checkDate = new Date(); // start today
+
+                // Scan next 3 days
+                for (let d = 0; d < 3; d++) {
+                    const dateKey = getDateKey(checkDate);
+                    const dayEvents = state.events[dateKey] || [];
+                    
+                    // Simple logic: Iterate 15m blocks
+                    for (let h = workStart; h < workEnd; h++) {
+                        for (let m = 0; m < 60; m+=30) {
+                            // Check if this block + duration overlaps any event
+                            const slotStartVal = h * 60 + m;
+                            const slotEndVal = slotStartVal + durationMinutes;
+                            
+                            // Check collision
+                            const collision = dayEvents.some(ev => {
+                                const [eh, em] = ev.time.split(':').map(Number);
+                                const evStartVal = eh * 60 + em;
+                                const evEndVal = evStartVal + 60; // Assume 1h default if unknown
+                                return (slotStartVal < evEndVal && slotEndVal > evStartVal);
+                            });
+
+                            if (!collision) {
+                                const timeString = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`;
+                                slots.push({ date: dateKey, time: timeString, dayName: DAYS[checkDate.getDay()] });
+                                if (slots.length >= 3) break; // found enough
+                            }
+                        }
+                        if (slots.length >= 3) break;
+                    }
+                    if (slots.length >= 3) break;
+                    checkDate.setDate(checkDate.getDate() + 1);
+                }
+
+                if (slots.length === 0) {
+                    resultsContainer.innerHTML = '<p class="text-sm text-red-500">No slots found in next 3 days.</p>';
+            } else {
+                    resultsContainer.innerHTML = slots.map(s => `
+                        <button onclick="bookSlot('${s.date}', '${s.time}')" class="w-full text-left p-2 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded border border-purple-100 dark:border-purple-800 mb-1 flex justify-between items-center group">
+                            <div>
+                                <span class="text-xs font-bold text-purple-700 dark:text-purple-300">${s.dayName}, ${s.date}</span>
+                                <div class="text-sm font-mono">${s.time}</div>
+                            </div>
+                            <span class="text-xs text-purple-500 opacity-0 group-hover:opacity-100">Book</span>
+                        </button>
+                    `).join('');
+                }
+            }, 600);
+        };
+
+        window.bookSlot = (date, time) => {
+            closeModal('optimizationModal');
+            // Pre-fill add modal
+            const [y, m, d] = date.split('-').map(Number);
+            state.selectedDate = { year: y, month: m - 1, day: d, dateKey: date };
+            
+            // Open add modal manually with prefill
+            document.getElementById('eventForm').reset();
+            document.getElementById('editEventId').value = '';
+            document.getElementById('eventTime').value = time;
+            document.getElementById('eventTitle').value = "Deep Work / Focus";
+            document.getElementById('addModalTitle').textContent = "Add New Event";
+            document.getElementById('addModal').classList.remove('hidden');
+        };
+
+        // --- STANDARD CRUD + RECURRENCE ---
+        window.handleEventSubmit = (e) => {
+            e.preventDefault();
+            if (!state.selectedDate) return;
+            const { dateKey } = state.selectedDate;
+            const title = document.getElementById('eventTitle').value;
+            const category = document.getElementById('eventCategory').value;
+            const time = document.getElementById('eventTime').value;
+            const desc = document.getElementById('eventDesc').value;
+            const notifyMinutes = parseInt(document.getElementById('eventNotify').value);
+            const recur = document.getElementById('eventRecur').value;
+            const editId = document.getElementById('editEventId').value;
+            
+            if (notifyMinutes > 0 && Notification.permission !== 'granted') Notification.requestPermission();
+
+            const baseEvent = { 
+                id: editId || 'evt_' + Date.now(), 
+                title, category, time, description: desc, 
+                date: dateKey, isSystem: false, notifyMinutes, hasNotified: false, 
+                recurrence: recur !== 'none' ? recur : null, // Store simple recurrence type
+                recurrencePattern: null // This will be set if parsed from NLP input
+            };
+
+            // Store the event being considered globally for conflict resolution
+            window.currentNewEvent = baseEvent;
+
+            // Add console log for debugging
+            console.log("handleEventSubmit: Adding/Updating event", baseEvent);
+
+            // Check for conflicts before adding
+            const conflicts = getConflicts([...(state.events[dateKey] || []), window.currentNewEvent]);
+
+            if (conflicts.length > 0 && !editId) {
+                openConflictResolutionModal(window.currentNewEvent, conflicts);
+                return; // Stop here, wait for user to resolve conflict
+            }
+
+            // Helper to add event safely
+            const pushEvent = (dKey, evt) => {
+                if (!state.events[dKey]) state.events[dKey] = [];
+                state.events[dKey].push(evt);
+            };
+
+            // 1. Add Main Event
+            if (editId) {
+                const idx = state.events[dateKey].findIndex(ev => ev.id === editId);
+                if (idx > -1) state.events[dateKey][idx] = baseEvent;
+            } else {
+                pushEvent(dateKey, baseEvent);
+            }
+
+            // 2. Handle Recurrence (Generate next 10 instances for simple dropdown selection)
+            if (recur !== 'none' && !editId) {
+                let current = new Date(state.selectedDate.year, state.selectedDate.month, state.selectedDate.day);
+                let count = 0;
+                const limit = recur === 'monthly' ? 6 : 10;
+
+                while(count < limit) {
+                    count++;
+                    if (recur === 'daily') current.setDate(current.getDate() + 1);
+                    if (recur === 'weekly') current.setDate(current.getDate() + 7);
+                    if (recur === 'biweekly') current.setDate(current.getDate() + 14);
+                    if (recur === 'monthly') current.setMonth(current.getMonth() + 1);
+
+                    const dKey = getDateKey(current);
+                    const clone = { ...baseEvent, id: baseEvent.id + '_r' + count, date: dKey, isRecurrence: true };
+                    pushEvent(dKey, clone);
+                }
+            }
+
+            saveEvents();
+            closeModal('addModal');
+            
+            // Explicitly re-render the app and the day view if it's open
+            renderApp();
+            if (state.selectedDate && !document.getElementById('viewModal').classList.contains('hidden')) {
+                openDayView(state.selectedDate.year, state.selectedDate.month, state.selectedDate.day);
+            }
+
+            showToast("Event saved!", 'success');
+        };
+
+        window.editEvent = (id) => {
+            const { dateKey } = state.selectedDate;
+            const event = state.events[dateKey].find(ev => ev.id === id);
+            if (!event) return;
+            document.getElementById('eventTitle').value = event.title;
+            document.getElementById('eventCategory').value = event.category;
+            document.getElementById('eventTime').value = event.time;
+            document.getElementById('eventDesc').value = event.description;
+            document.getElementById('eventNotify').value = event.notifyMinutes || 0;
+            document.getElementById('editEventId').value = event.id;
+            document.getElementById('addModalTitle').textContent = "Edit Event";
+            closeModal('viewModal');
+            openModal('addModal');
+        };
+
+        window.allowDrop = (ev) => { ev.preventDefault(); ev.currentTarget.classList.add('drop-zone-hover'); };
+        window.drag = (ev, id, dateKey) => { ev.dataTransfer.setData("eventId", id); ev.dataTransfer.setData("oldDate", dateKey); };
+        window.drop = (ev, newDate) => {
+            ev.preventDefault(); ev.currentTarget.classList.remove('drop-zone-hover');
+            const eventId = ev.dataTransfer.getData("eventId"); const oldDate = ev.dataTransfer.getData("oldDate");
+            if (oldDate === newDate) return;
+            const eventIdx = state.events[oldDate].findIndex(e => e.id === eventId);
+            if (eventIdx > -1) {
+                const event = state.events[oldDate][eventIdx];
+                state.events[oldDate].splice(eventIdx, 1);
+                if (state.events[oldDate].length === 0) delete state.events[oldDate];
+                event.date = newDate;
+                if (!state.events[newDate]) state.events[newDate] = [];
+                state.events[newDate].push(event);
+                saveEvents(); renderApp();
+            }
+        };
+
+        // --- SEARCH ---
+        window.handleSearch = (query) => {
+            const container = document.getElementById('searchResults');
+            if (!query.trim()) { container.innerHTML = `<p class="text-center text-gray-400 text-sm py-8">Start typing...</p>`; return; }
+            const results = [];
+            Object.entries(state.events).forEach(([date, events]) => {
+                events.forEach(ev => {
+                    if ((ev.title && ev.title.toLowerCase().includes(query.toLowerCase())) || (ev.description && ev.description.toLowerCase().includes(query.toLowerCase()))) {
+                        results.push(ev);
+                    }
+                });
+            });
+            if (results.length === 0) { container.innerHTML = `<p class="text-center text-gray-400 text-sm py-8">No matches.</p>`; return; }
+            container.innerHTML = results.map(ev => {
+                const [y, m, d] = ev.date.split('-');
+                return `<div onclick="jumpToEvent('${ev.date}')" class="p-3 mb-2 bg-white dark:bg-gray-800 rounded border border-gray-200 dark:border-gray-700 cursor-pointer hover:bg-blue-50 dark:hover:bg-gray-700 transition"><div class="flex justify-between items-center"><span class="font-bold text-sm dark:text-gray-200">${ev.title}</span><span class="text-xs text-gray-500 bg-gray-100 dark:bg-gray-600 dark:text-gray-300 px-2 py-0.5 rounded">${d} ${MONTHS[parseInt(m)-1]}</span></div><p class="text-xs text-gray-500 dark:text-gray-400 mt-1 truncate">${ev.description || 'No description'}</p></div>`;
+            }).join('');
+        };
+        
+        window.jumpToEvent = (dateStr) => {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            state.currentDate = new Date(y, m - 1, 1);
+            renderApp();
+            closeModal('searchModal');
+            setTimeout(() => openDayView(y, m - 1, d), 100); // Small delay to allow renderApp to complete
+        };
+
+        // --- NLP Fallback Helpers ---
+        function parseDateFromText(text) {
+            const today = new Date();
+            let target = new Date();
+            
+            if (text.includes('tomorrow')) target.setDate(today.getDate() + 1);
+            else if (text.includes('today')) { /* keep today */ }
+            else {
+                // Check for days "monday", "friday"
+                const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+                for (let i = 0; i < 7; i++) {
+                    if (text.includes(days[i])) {
+                        const currentDay = today.getDay();
+                        const distance = (i + 7 - currentDay) % 7;
+                        target.setDate(today.getDate() + (distance === 0 ? 7 : distance)); // Next occurrence
+                        break;
+                    }
+                }
+            }
+            return getDateKey(target);
+        }
+
+        function parseTimeFromText(text) {
+            const match = text.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/);
+            if (match) {
+                let h = parseInt(match[1]);
+                let m = match[2] || '00';
+                const amp = match[3];
+                if (amp === 'pm' && h < 12) h += 12;
+                if (amp === 'am' && h === 12) h = 0;
+                return `${String(h).padStart(2,'0')}:${m}`;
+            }
+            return null;
+        }
+
+        // ... (Existing Helpers: openModal, closeModal, etc.) ...
+        window.openModal = (id) => { document.getElementById(id).classList.remove('hidden'); if(id === 'searchModal') setTimeout(() => document.getElementById('searchInput').focus(), 50); };
+        window.closeModal = (id) => document.getElementById(id).classList.add('hidden');
+        window.openAddModal = () => { document.getElementById('eventForm').reset(); document.getElementById('editEventId').value = ''; document.getElementById('eventTime').value = '07:00'; document.getElementById('addModalTitle').textContent = "Add New Event"; closeModal('viewModal'); openModal('addModal'); };
+        window.toggleMobileSidebar = () => { const aside = document.querySelector('aside'); aside.classList.toggle('hidden'); aside.classList.toggle('fixed'); aside.classList.toggle('inset-0'); aside.classList.toggle('w-full'); };
+        window.changeMonth = (offset) => { state.currentDate.setMonth(state.currentDate.getMonth() + offset); renderApp(); };
+        window.jumpToToday = () => { state.currentDate = new Date(); renderApp(); };
+        window.openDayView = (year, month, day) => {
+            const dateKey = getDateKey(new Date(year, month, day));
+            state.selectedDate = { year, month, day, dateKey };
+            state.highlightRange = null; renderApp(); 
+            if (!state.events[dateKey] || state.events[dateKey].length === 0) { openAddModal(); return; }
+            renderViewModalContent(); openModal('viewModal');
+        };
+        window.toggleHighlight = (start, end) => { state.highlightRange = (state.highlightRange && state.highlightRange.start === start) ? null : { start, end }; renderApp(); closeModal('viewModal'); };
+        
+        window.toggleTheme = () => { const html = document.documentElement; const isDark = html.classList.toggle('dark'); localStorage.setItem('theme', isDark ? 'dark' : 'light'); };
+        function checkTheme() {
+            if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        }
+
+        if (localStorage.getItem('theme') === 'dark' || (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches)) { document.documentElement.classList.add('dark'); }
+        window.downloadBackup = () => { const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({events: state.events, tasks: state.tasks})); const a = document.createElement('a'); a.setAttribute("href", dataStr); a.setAttribute("download", "chrono_backup.json"); document.body.appendChild(a); a.click(); a.remove(); };
+        window.triggerRestore = () => document.getElementById('restoreInput').click();
+        window.restoreBackup = (input) => { if (!input.files[0]) return; const reader = new FileReader(); reader.onload = (e) => { try { const restored = JSON.parse(e.target.result); if (restored.events) { if(confirmAction("Overwrite current data?", { actionType: 'restore_confirm' })) { state.events = restored.events || {}; state.tasks = restored.tasks || []; saveEvents(); saveTasks(); showToast("Restored!", 'success'); } } else { throw new Error("Invalid format"); } } catch (err) { showToast("Error: " + err.message, 'error'); } input.value = ''; }; reader.readAsText(input.files[0]); };
+
+        // --- Autocomplete for NLP ---
+        const nlpAutocompleteSuggestions = [
+            "Add Meeting tomorrow at 10am",
+            "Add Task buy groceries",
+            "Delete all events for today",
+            "Delete all tasks for next friday",
+            "Delete all AI generated events",
+            "Delete all PDF parsed events",
+            "Add Study session on monday",
+            "Add Work call at 3pm",
+            "Add Gym workout today evening",
+            "Add Birthday party next saturday",
+            "Add Exam on december 25th",
+            "Add Appointment next wednesday",
+            "Add Project deadline next month",
+            "today",
+            "tomorrow",
+            "next monday",
+            "delete",
+            "add",
+            "task",
+            "event"
+        ];
+
+        window.showNlpSuggestions = (query) => {
+            const datalist = document.getElementById('nlpSuggestions');
+            datalist.innerHTML = ''; // Clear previous suggestions
+            
+            if (query.length < 2) return; // Only show suggestions after 2 characters
+
+            const filteredSuggestions = nlpAutocompleteSuggestions.filter(s => 
+                s.toLowerCase().includes(query.toLowerCase())
+            );
+
+            filteredSuggestions.forEach(s => {
+                const option = document.createElement('option');
+                option.value = s;
+                datalist.appendChild(option);
+            });
+        };
+
+        loadEvents();
+
+        // --- TOAST NOTIFICATIONS ---
+        function showToast(message, type = 'info', duration = 3000) {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `p-3 rounded-lg shadow-lg text-white text-sm flex items-center gap-2 fade-in`;
+            
+            let bgColor = 'bg-gray-800';
+            let icon = 'info';
+
+            if (type === 'success') { bgColor = 'bg-green-600'; icon = 'check-circle'; }
+            else if (type === 'error') { bgColor = 'bg-red-600'; icon = 'x-circle'; }
+            else if (type === 'warning') { bgColor = 'bg-yellow-600'; icon = 'alert-triangle'; }
+            else if (type === 'info') { bgColor = 'bg-blue-600'; icon = 'info'; }
+
+            toast.innerHTML = `<i data-lucide="${icon}" class="w-4 h-4"></i><span>${message}</span>`;
+            toast.classList.add(bgColor);
+
+            container.appendChild(toast);
+            lucide.createIcons(); // Render lucide icons in the toast
+
+            setTimeout(() => {
+                toast.classList.add('fade-out');
+                toast.addEventListener('animationend', () => toast.remove());
+            }, duration);
+        }
+
+        // --- Render Day View Modal Content ---
+        window.renderViewModalContent = () => {
+            const { day, month, year, dateKey } = state.selectedDate;
+            console.log("renderViewModalContent: state.selectedDate", state.selectedDate); // Debug
+            console.log("renderViewModalContent: dateKey", dateKey); // Debug
+
+            document.getElementById('viewModalTitle').textContent = `${day} ${MONTHS[month]} ${year}`;
+            const list = document.getElementById('viewModalList');
+            const dayEvents = state.events[dateKey] || [];
+            console.log("renderViewModalContent: state.events[dateKey]", state.events[dateKey]); // Debug
+            console.log("renderViewModalContent: dayEvents.length", dayEvents.length); // Debug
+
+            if (dayEvents.length === 0) { list.innerHTML = `<div class="text-center py-8 text-gray-400 dark:text-gray-500">No events found</div>`; return; }
+            
+            // Conflict Check
+            const eventsWithConflict = getConflicts(dayEvents);
+            console.log("renderViewModalContent: eventsWithConflict.length", eventsWithConflict.length); // Debug
+            
+            list.innerHTML = dayEvents.map(ev => {
+                let cat = Object.values(CATEGORIES).find(c => c.id === ev.category) || CATEGORIES.PERSONAL;
+                if (ev.isMultiDayStart) cat = CATEGORIES.MULTI_START;
+                if (ev.isMultiDayEnd) cat = CATEGORIES.MULTI_END;
+                
+                const isConflicting = eventsWithConflict.some(c => c.id === ev.id); // Check if this specific event is in conflict
+                const warningIcon = isConflicting ? `<div class="flex items-center text-red-500 text-xs font-bold mb-1"><i data-lucide="alert-circle" class="w-3 h-3 mr-1"></i> Conflict Detected</div>` : '';
+                let multiDayAction = '';
+                if (ev.isMultiDayStart) multiDayAction = `<button onclick="toggleHighlight('${ev.date}', '${ev.endDateRef}')" class="mt-2 w-full text-xs bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 py-1 rounded border border-purple-200 dark:border-purple-800 hover:bg-purple-200 dark:hover:bg-purple-900/50 transition"><i data-lucide="eye" class="inline w-3 h-3 mr-1"></i> Visualize Span (Ends ${ev.endDateRef})</button>`;
+                else if (ev.isMultiDayEnd) multiDayAction = `<button onclick="toggleHighlight('${ev.startDateRef}', '${ev.date}')" class="mt-2 w-full text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 py-1 rounded border border-gray-200 dark:border-gray-700 hover:bg-gray-200 dark:hover:bg-gray-700 transition"><i data-lucide="arrow-left" class="inline w-3 h-3 mr-1"></i> See Start Date (${ev.startDateRef})</button>`;
+
+                return `<div class="p-3 mb-3 rounded-lg border ${cat.color} relative group">${warningIcon}<div class="flex justify-between items-start"><div class="w-full"><h4 class="font-bold text-sm">${ev.title}</h4><div class="flex items-center gap-2 text-xs mt-1 opacity-80"><span>${ev.time || '--:--'}</span> • <span class="capitalize">${cat.label}</span>${ev.notifyMinutes ? `• <span class="text-blue-600 dark:text-blue-300"><i data-lucide="bell" class="inline w-3 h-3"></i> On</span>` : ''}</div>${ev.description ? `<p class="text-xs mt-2 opacity-90 leading-relaxed">${ev.description}</p>` : ''}${multiDayAction}</div><div class="flex gap-1 ml-2 flex-shrink-0"><button onclick="editEvent('${ev.id}')" class="p-1 hover:bg-white/50 dark:hover:bg-black/20 rounded text-blue-700 dark:text-blue-300"><i data-lucide="edit-2" class="w-3 h-3"></i></button><button onclick="confirmAction('delete_event', { id: '${ev.id}', dateKey: '${dateKey}' })" class="p-1 hover:bg-white/50 dark:hover:bg-black/20 rounded text-red-700 dark:text-red-300"><i data-lucide="trash-2" class="w-3 h-3"></i></button></div></div></div>`;
+            }).join('');
+            lucide.createIcons();
+        };
+
+        // --- Summary Generation ---
+        function generateSummary(dateOrRange, title) {
+            openModal('insightsModal');
+            document.getElementById('insightsModalTitle').textContent = title;
+            const insightsContent = document.getElementById('insightsContent');
+            insightsContent.innerHTML = '<div class="flex justify-center"><div class="loader border-purple-500 border-t-transparent"></div></div>';
+
+            setTimeout(() => {
+                let eventsToSummarize = [];
+                let tasksToSummarize = [];
+
+                const addEventsForDate = (dateKey) => {
+                    if (state.events[dateKey]) {
+                        eventsToSummarize.push(...state.events[dateKey]);
+                    }
+                };
+
+                const addTasksForDate = (dateKey) => {
+                    tasksToSummarize.push(...state.tasks.filter(task => task.date === dateKey));
+                };
+
+                if (typeof dateOrRange === 'string') {
+                    // Single date
+                    addEventsForDate(dateOrRange);
+                    addTasksForDate(dateOrRange);
+                } else if (typeof dateOrRange === 'object' && dateOrRange.start && dateOrRange.end) {
+                    // Date range
+                    let startDate = new Date(dateOrRange.start);
+                    let endDate = new Date(dateOrRange.end);
+                    let currentDate = new Date(startDate);
+
+                    while (currentDate <= endDate) {
+                        const dKey = getDateKey(current);
+                        addEventsForDate(dKey);
+                        addTasksForDate(dKey);
+                        currentDate.setDate(currentDate.getDate() + 1);
+                    }
+                }
+
+                let summaryHtml = '';
+
+                if (eventsToSummarize.length === 0 && tasksToSummarize.length === 0) {
+                    summaryHtml = '<p class="text-gray-600 dark:text-gray-300">No events or tasks found for this period.</p>';
+                } else {
+                    if (eventsToSummarize.length > 0) {
+                        summaryHtml += '<h4 class="font-semibold text-gray-800 dark:text-white mt-4 mb-2">Events:</h4>';
+                        summaryHtml += '<ul class="space-y-2">';
+                        eventsToSummarize.sort((a, b) => a.time.localeCompare(b.time));
+                        eventsToSummarize.forEach(event => {
+                            summaryHtml += `
+                                <li class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                    <span class="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400">${event.time}</span>
+                                    <span>${event.title}</span>
+                                    ${event.date !== dateOrRange ? `<span class="text-xs text-gray-500 dark:text-gray-400">(${event.date})</span>` : ''}
+                                </li>
+                            `;
+                        });
+                        summaryHtml += '</ul>';
+                    }
+
+                    if (tasksToSummarize.length > 0) {
+                        summaryHtml += '<h4 class="font-semibold text-gray-800 dark:text-white mt-4 mb-2">Tasks:</h4>';
+                        summaryHtml += '<ul class="space-y-2">';
+                        tasksToSummarize.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+                        tasksToSummarize.forEach(task => {
+                            summaryHtml += `
+                                <li class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                                    <span class="${task.done ? 'line-through text-gray-500' : ''}">${task.text}</span>
+                                    ${task.date && task.date !== dateOrRange ? `<span class="text-xs text-gray-500 dark:text-gray-400">(${task.date})</span>` : ''}
+                                </li>
+                            `;
+                        });
+                        summaryHtml += '</ul>';
+                    }
+                }
+                insightsContent.innerHTML = summaryHtml;
+            }, 500);
+        }
+
+        // --- CONFLICT RESOLUTION LOGIC ---
+        let pendingConflictingNewEvent = null; // Store the event that caused the conflict
+        let pendingConflictingEvents = []; // Store the events it conflicts with
+        window.currentNewEvent = null; // Used when an event is about to be added (from modal or NLP) for conflict check
+
+        function openConflictResolutionModal(newEvent, conflicts) {
+            pendingConflictingNewEvent = newEvent;
+            pendingConflictingEvents = conflicts;
+
+            document.getElementById('conflictingNewEventTitle').textContent = newEvent.title;
+            document.getElementById('conflictingNewEventTime').textContent = newEvent.time;
+            document.getElementById('conflictingNewEventDate').textContent = newEvent.date;
+
+            const conflictingEventsList = document.getElementById('conflictingEventsList');
+            conflictingEventsList.innerHTML = '';
+            conflicts.forEach(conflict => {
+                const li = document.createElement('li');
+                li.textContent = `${conflict.title} at ${conflict.time} (${conflict.category})`;
+                conflictingEventsList.appendChild(li);
+            });
+
+            openModal('conflictResolutionModal');
+        }
+
+        function findNextAvailableSlot(eventToSchedule, startDate = new Date()) {
+            const durationMinutes = 60; // Assuming 1 hour for now, can be dynamic later
+            let checkDate = new Date(startDate); // Start checking from here
+            
+            const workStart = 9; // 9 AM
+            const workEnd = 18; // 6 PM
+            const searchLimitDays = 7; // Look for next 7 days
+
+            for (let d = 0; d < searchLimitDays; d++) {
+                const dateKey = getDateKey(checkDate);
+                const dayEvents = state.events[dateKey] || [];
+
+                for (let h = workStart; h < workEnd; h++) {
+                    for (let m = 0; m < 60; m += 30) { // Check every 30 minutes
+                        const slotStartTime = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                        const slotEndTime = `${String(h).padStart(2, '0')}:${String(m + durationMinutes).padStart(2, '0')}`;
+
+                        const tempEvent = { ...eventToSchedule, date: dateKey, time: slotStartTime };
+                        const conflicts = getConflicts([...dayEvents, tempEvent]);
+
+                        if (conflicts.length === 0) {
+                            return { date: dateKey, time: slotStartTime };
+                        }
+                    }
+                }
+                checkDate.setDate(checkDate.getDate() + 1); // Move to next day
+            }
+            return null; // No slot found
+        }
+
+        function resolveConflict(actionType) {
+            closeModal('conflictResolutionModal');
+
+            if (!pendingConflictingNewEvent) return; // Should not happen
+
+            if (actionType === 'ignore') {
+                // Add the new event anyway
+                const dKey = pendingConflictingNewEvent.date;
+                if (!state.events[dKey]) state.events[dKey] = [];
+                state.events[dKey].push(pendingConflictingNewEvent);
+                showToast(`Event "${pendingConflictingNewEvent.title}" added despite conflict.`, 'warning');
+            } else if (actionType === 'reschedule_new') {
+                // Find next available slot for the new event
+                const foundSlot = findNextAvailableSlot(60, new Date(pendingConflictingNewEvent.date)); // Assume 60min duration
+                if (foundSlot) {
+                    const dKey = foundSlot.date;
+                    const rescheduledEvent = { ...pendingConflictingNewEvent, date: foundSlot.date, time: foundSlot.time };
+                    if (!state.events[dKey]) state.events[dKey] = [];
+                    state.events[dKey].push(rescheduledEvent);
+                    showToast(`Event "${rescheduledEvent.title}" rescheduled to ${foundSlot.date} at ${foundSlot.time}.`, 'success');
+                } else {
+                    showToast(`Could not find an available slot for "${pendingConflictingNewEvent.title}". Please try manually.`, 'error');
+                    // Fallback to adding anyway if no slot found after user's explicit choice
+                    const dKey = pendingConflictingNewEvent.date;
+                    if (!state.events[dKey]) state.events[dKey] = [];
+                    state.events[dKey].push(pendingConflictingNewEvent);
+                    showToast(`Event "${pendingConflictingNewEvent.title}" added to original time due to no alternative slot found.`, 'warning');
+                }
+            } else if (actionType === 'reschedule_existing') {
+                // This is complex and experimental. For now, we'll just inform the user.
+                showToast("Intelligent rescheduling of existing events is an advanced feature and not yet fully implemented. Please reschedule manually.", 'info');
+                // Optionally, could offer to add the new event to its original time
+                const dKey = pendingConflictingNewEvent.date;
+                if (!state.events[dKey]) state.events[dKey] = [];
+                state.events[dKey].push(pendingConflictingNewEvent);
+                showToast(`Event "${pendingConflictingNewEvent.title}" added to original time. Please manually reschedule conflicting events.`, 'warning');
+            }
+            
+            pendingConflictingNewEvent = null;
+            pendingConflictingEvents = [];
+            saveEvents();
+            renderApp();
+            if (!document.getElementById('viewModal').classList.contains('hidden')) renderViewModalContent();
+        }
+
+        window.handleFileSelect = (input) => {
+            const fileNameDisplay = document.getElementById('fileName');
+            const uploadPlaceholder = document.getElementById('uploadPlaceholder');
+            const uploadPreview = document.getElementById('uploadPreview');
+            const processBtn = document.getElementById('processBtn');
+            // const processLocalBtn = document.getElementById('processLocalBtn'); // Removed reference to local button
+
+            if (input.files && input.files[0]) {
+                fileNameDisplay.textContent = input.files[0].name;
+                uploadPlaceholder.classList.add('hidden');
+                uploadPreview.classList.remove('hidden');
+                uploadPreview.classList.add('flex');
+                processBtn.disabled = false;
+                // processLocalBtn.disabled = false; // Removed reference to local button
+            } else {
+                fileNameDisplay.textContent = 'schedule.pdf';
+                uploadPlaceholder.classList.remove('hidden');
+                uploadPreview.classList.add('hidden');
+                uploadPreview.classList.remove('flex');
+                processBtn.disabled = true;
+                // processLocalBtn.disabled = true; // Removed reference to local button
+            }
+        };
+
+        // --- CHRONO AI: ADVANCED HYBRID PARSER ---
+
+        window.processPDFUpload = async () => {
+            const fileInput = document.getElementById('fileInput');
+            const btn = document.getElementById('processBtn');
+            const btnText = document.getElementById('processBtnText');
+            const progressBar = document.getElementById('pdfProgressBar'); // This is the old, internal modal progress bar, not the new global one
+            const progressBarInner = progressBar.querySelector('span'); // Same as above
+
+            // New global status elements
+            const pdfProcessingStatus = document.getElementById('pdfProcessingStatus');
+            const pdfProcessPercentage = document.getElementById('pdfProcessPercentage');
+            const pdfProcessStatusText = document.getElementById('pdfProcessStatusText');
+            const pdfProcessTimeElapsed = document.getElementById('pdfProcessTimeElapsed');
+
+            if(!fileInput.files[0]) {
+                showToast("Please select a PDF file.", 'error');
+                return;
+            }
+
+            // Disable the original modal button (which is now hidden)
+            btn.disabled = true;
+            btnText.textContent = 'Analyzing...';
+            progressBar.classList.add('hidden'); // Hide the modal internal progress bar
+            
+            // Show the new global processing status bar
+            pdfProcessingStatus.classList.remove('hidden');
+            pdfProcessPercentage.textContent = '0%';
+            pdfProcessStatusText.textContent = 'Initializing...';
+            pdfProcessTimeElapsed.textContent = '0s';
+
+            const startTime = Date.now(); // Start timer
+
+            showToast('Processing PDF in background, please wait...', 'info', 5000);
+            closeModal('uploadModal'); // Close modal immediately
+
+            const updateElapsedTime = () => {
+                const elapsed = Math.round((Date.now() - startTime) / 1000);
+                pdfProcessTimeElapsed.textContent = `${elapsed}s`;
+            };
+            const timerInterval = setInterval(updateElapsedTime, 1000); // Update time every second
+
+            try {
+                const file = fileInput.files[0];
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                
+                let fullText = "";
+                const numPages = pdf.numPages;
+
+                // Stage 1: Text Extraction (0% - 70%)
+                for (let i = 1; i <= numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    fullText += textContent.items.map(item => item.str).join(" ") + "\n\n";
+                    const progress = Math.round((i / numPages) * 70); // 0-70% for text extraction
+
+                    // Update global status bar with text extraction progress
+                    pdfProcessPercentage.textContent = `${progress}%`;
+                    pdfProcessStatusText.textContent = `Extracting text (Page ${i}/${numPages})...`;
+                }
+                console.log("Raw PDF Text Extracted:", fullText.substring(0, 500) + "...");
+
+                // Stage 2: AI Analysis (70% - 90%)
+                pdfProcessPercentage.textContent = '70%'; // Set base for AI analysis
+                pdfProcessStatusText.textContent = 'Preparing for AI analysis...';
+
+                const prompt = `Given the following text from a timetable or schedule, extract all events. For each event, provide the 'title', 'date' (in YYYY-MM-DD format), 'time' (in HH:MM 24-hour format, default to 09:00 if not specified), 'category' (choose from 'academic', 'personal', 'work', 'important', 'imported', default to 'imported'), 'description', 'duration' (in minutes, default to 60), 'recurrence' (e.g., 'daily', 'weekly', 'biweekly', 'monthly', 'none'), 'isMultiDayStart' (boolean), 'endDateRef' (YYYY-MM-DD for multi-day events). If 'isMultiDayStart' is true, set the 'endDateRef'. If a single day event, only provide 'date'. Return an empty array if no events are found. The current year is ${new Date().getFullYear()}. Here is the text: ${fullText}\n\nRespond with a JSON array of event objects only.`;
+
+                pdfProcessPercentage.textContent = '80%'; // Indicate AI analysis is active
+                pdfProcessStatusText.textContent = 'Analyzing content with AI...';
+                const geminiResponseText = await callGeminiAPI(prompt);
+                console.log("Gemini API Response:", geminiResponseText);
+                pdfProcessPercentage.textContent = '90%'; // AI analysis complete
+
+                // Stage 3: Event Addition (90% - 100%)
+                pdfProcessStatusText.textContent = 'Adding events to calendar...';
+
+                let extractedEvents = [];
+                try {
+                    const jsonMatch = geminiResponseText.match(/```json\n([\s\S]*?)\n```/);
+                    const cleanJsonString = jsonMatch ? jsonMatch[1] : geminiResponseText;
+                    extractedEvents = JSON.parse(cleanJsonString);
+                } catch (jsonError) {
+                    console.error("Error parsing Gemini JSON response:", jsonError);
+                    showToast("AI couldn't parse events. Response not in expected format.", 'error');
+                    extractedEvents = [];
+                }
+                
+                if(extractedEvents.length === 0) {
+                    showToast("Chrono AI couldn't detect valid events from the PDF.", 'warning');
+                } else {
+                    let count = 0;
+                    extractedEvents.forEach(ev => {
+                        if(ev.date) {
+                            const categoryId = Object.values(CATEGORIES).some(cat => cat.id === ev.category) ? ev.category : 'imported';
+                            const eventToAdd = {
+                                id: 'ai_pdf_' + Date.now() + '_' + Math.random(),
+                                title: ev.title || 'Imported Event',
+                                date: ev.date,
+                                time: ev.time || '09:00',
+                                category: categoryId,
+                                description: ev.description || `From PDF: ${ev.title}`,
+                                isSystem: true,
+                                notifyMinutes: 0,
+                                hasNotified: false,
+                                recurrence: ev.recurrence || null,
+                                recurrencePattern: null,
+                                duration: ev.duration || 60,
+                                isMultiDayStart: ev.isMultiDayStart || false,
+                                endDateRef: ev.endDateRef || null
+                            };
+                            addEvent(ev.date, eventToAdd);
+                            count++;
+
+                            if (eventToAdd.isMultiDayStart && eventToAdd.endDateRef && eventToAdd.date !== eventToAdd.endDateRef) {
+                                const endEvent = {
+                                    id: 'ai_pdf_end_' + Date.now() + '_' + Math.random(),
+                                    title: `(End) ${eventToAdd.title}`,
+                                    date: eventToAdd.endDateRef,
+                                    time: eventToAdd.time,
+                                    description: `Started on ${eventToAdd.date}`,
+                                    category: CATEGORIES.MULTI_END.id,
+                                    isSystem: true,
+                                    isMultiDayEnd: true,
+                                    startDateRef: eventToAdd.date,
+                                    duration: eventToAdd.duration,
+                                };
+                                addEvent(eventToAdd.endDateRef, endEvent);
+                            }
+                        }
+                    });
+                    
+                    saveEvents();
+                    const timeElapsed = Math.round((Date.now() - startTime) / 1000);
+                    showToast(`Chrono AI successfully extracted ${count} events in ${timeElapsed} seconds!`, 'success');
+                    pdfProcessPercentage.textContent = '100%'; // Final update
+                    
+                    if (extractedEvents[0] && extractedEvents[0].date) {
+                        const [y, m, d] = extractedEvents[0].date.split('-').map(Number);
+                        state.currentDate = new Date(y, m-1, 1);
+                        renderApp();
+                    }
+                }
+            } catch (error) {
+                console.error("PDF Parsing Error:", error);
+                showToast("Error parsing PDF: " + error.message, 'error');
+            } finally {
+                clearInterval(timerInterval); // Stop the timer
+                pdfProcessingStatus.classList.add('hidden'); // Hide the global status bar
+
+                // Reset original modal UI elements (which are hidden)
+                document.getElementById('uploadPlaceholder').classList.remove('hidden');
+                document.getElementById('uploadPreview').classList.add('hidden');
+                document.getElementById('uploadPreview').classList.remove('flex');
+                fileInput.value = '';
+                btnText.textContent = 'Process PDF';
+                progressBar.classList.add('hidden');
+                progressBarInner.style.width = '0%';
+                btn.disabled = false;
+            }
+        };
+
+        function addEvent(dateKey, event) {
+            if (!state.events[dateKey]) {
+                state.events[dateKey] = [];
+            }
+            state.events[dateKey].push(event);
+            saveEvents();
+        }
+
+        window.handleNLPInputOnEnter = (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); // Prevent default form submission if any
+                window.handleNLPInput({ key: 'Enter' });
+            }
+        };
+
+        async function processPDFLocal() {
+            const file = document.getElementById('fileInput').files[0];
+            if (!file) return;
+
+            const btn = document.getElementById('processLocalBtn'); // Changed to processLocalBtn
+            btn.textContent = 'Scanning...';
+            
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument(arrayBuffer).promise;
+                let count = 0;
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    
+                    // 1. Sort items by Y (lines), then X (columns)
+                    // pdf.js coords: (0,0) is bottom-left. Y increases upwards.
+                    // We sort Descending Y, Ascending X.
+                    const items = textContent.items.map(item => ({
+                        str: item.str,
+                        x: item.transform[4],
+                        y: item.transform[5]
+                    }));
+
+                    items.sort((a, b) => {
+                        if (Math.abs(a.y - b.y) > 5) return b.y - a.y; // Different lines
+                        return a.x - b.x; // Same line, L to R
+                    });
+
+                    // 2. Reconstruct Lines
+                    let currentY = -1;
+                    let lineText = "";
+                    const lines = [];
+
+                    items.forEach(item => {
+                        if (currentY === -1 || Math.abs(item.y - currentY) < 5) {
+                            lineText += " " + item.str;
+                            currentY = item.y;
+                        } else {
+                            lines.push(lineText.toLowerCase());
+                            lineText = item.str;
+                            currentY = item.y;
+                        }
+                    });
+                    lines.push(lineText.toLowerCase()); // Last line
+
+                    // 3. Extract Events from Lines
+                    // Look for lines containing a date AND a time
+                    lines.forEach(line => {
+                        // Regex for DD/MM or DD-MM
+                        const dateMatch = line.match(/\b(\d{1,2})[\/\-](\d{1,2})\b/); 
+                        // Regex for Time HH:MM
+                        const timeMatch = line.match(/\b(\d{1,2}):(\d{2})\b/);
+
+                        if (dateMatch && timeMatch) {
+                            const d = parseInt(dateMatch[1]);
+                            const m = parseInt(dateMatch[2]) - 1; // 0-indexed month
+                            const y = new Date().getFullYear();
+                            
+                            const dateKey = getDateKey(new Date(y, m, d));
+                            const time = `${String(timeMatch[1]).padStart(2,'0')}:${timeMatch[2]}`;
+                            
+                            // Cleanup title
+                            const title = line
+                                .replace(dateMatch[0], '')
+                                .replace(timeMatch[0], '')
+                                .replace(/\s+/g, ' ')
+                                .trim();
+
+                            if (title.length > 2) {
+                                addEvent(dateKey, {
+                                    title: title.substring(0, 30),
+                                    time: time,
+                                    category: 'imported',
+                                    description: 'Imported from PDF'
+                                });
+                                count++;
+                            }
+                        }
+                    });
+                }
+
+                showToast(`Found ${count} events!`, 'success');
+                closeModal('uploadModal');
+                renderApp();
+
+            } catch (e) {
+                console.error(e);
+                showToast("Error reading PDF", 'error');
+            } finally {
+                btn.textContent = 'Process Locally';
+            }
+        }
+
+        // --- SETTINGS & INFO LOGIC ---
+        function openSettingsModal() {
+            renderSettingsModalContent();
+            openModal('settingsModal');
+        }
+
+        function renderSettingsModalContent() {
+            const contentDiv = document.getElementById('settingsContent');
+            let htmlContent = '';
+
+            // 1. Uptime / First Visit
+            const firstVisitTimestamp = localStorage.getItem('firstVisitTimestamp');
+            if (firstVisitTimestamp) {
+                const now = Date.now();
+                const elapsedMs = now - parseInt(firstVisitTimestamp);
+                const seconds = Math.floor(elapsedMs / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const hours = Math.floor(minutes / 60);
+                const days = Math.floor(hours / 24);
+
+                let uptimeString = '';
+                if (days > 0) uptimeString += `${days}d `; 
+                if (hours % 24 > 0) uptimeString += `${hours % 24}h `; 
+                if (minutes % 60 > 0) uptimeString += `${minutes % 60}m `; 
+                uptimeString += `${seconds % 60}s`;
+
+                htmlContent += `
+                    <div>
+                        <h4 class="font-bold text-gray-800 dark:text-white mb-2 text-md">Chrono Uptime</h4>
+                        <p class="text-sm text-gray-600 dark:text-gray-300">You've been using Chrono for: <strong>${uptimeString.trim()}</strong></p>
+                        <p class="text-xs text-gray-500 dark:text-gray-400 mt-1">First visit recorded: ${new Date(parseInt(firstVisitTimestamp)).toLocaleString()}</p>
+                    </div>
+                `;
+            } else {
+                htmlContent += `
+                    <div>
+                        <h4 class="font-bold text-gray-800 dark:text-white mb-2 text-md">Chrono Uptime</h4>
+                        <p class="text-sm text-gray-600 dark:text-gray-300">First visit not yet recorded. Continue using Chrono!</p>
+                    </div>
+                `;
+            }
+
+            // 2. History Summary (Events, Tasks, PDFs)
+            let totalEvents = 0;
+            Object.values(state.events).forEach(dayEvents => totalEvents += dayEvents.length);
+            const totalTasks = state.tasks.length;
+            const pdfParsedEvents = Object.values(state.events).flatMap(dayEvents => 
+                dayEvents.filter(ev => ev.category === CATEGORIES.IMPORTED.id)
+            ).length;
+
+            htmlContent += `
+                <div>
+                    <h4 class="font-bold text-gray-800 dark:text-white mb-2 text-md">Activity Summary</h4>
+                    <ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1 pl-4">
+                        <li>Total Events: <strong>${totalEvents}</strong></li>
+                        <li>Total Tasks: <strong>${totalTasks}</strong></li>
+                        <li>PDFs Parsed Events: <strong>${pdfParsedEvents}</strong></li>
+                    </ul>
+                </div>
+            `;
+
+            // 3. Other Settings (Placeholder)
+            htmlContent += `
+                <div>
+                    <h4 class="font-bold text-gray-800 dark:text-white mb-2 text-md">Other Settings</h4>
+                    <p class="text-sm text-gray-600 dark:text-gray-300">No advanced settings available yet. Stay tuned!</p>
+                </div>
+            `;
+
+            contentDiv.innerHTML = htmlContent;
+        }
+    </script>
+</body>
+</html>
