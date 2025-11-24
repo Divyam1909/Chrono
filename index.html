@@ -172,7 +172,7 @@
                     <span class="font-bold text-gray-700 dark:text-gray-300" id="stat-event-count">0</span>
                 </div>
             </div>
-            <button onclick="confirmAction('clear_all')" class="w-full flex items-center justify-center gap-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 py-1.5 rounded transition text-xs">
+            <button onclick="confirmAction('clear_all')" class="w-full flex items-center justify-center gap-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 py-1.5 rounded transition text-xs border-2 border-red-300 dark:border-red-700">
                 Reset Calendar
             </button>
             <input type="file" id="restoreInput" class="hidden" accept=".json" onchange="restoreBackup(this)">
@@ -199,7 +199,7 @@
                     <i data-lucide="search" class="w-5 h-5"></i>
                     <span class="hidden sm:inline">Search Events</span>
                 </button>
-                <button onclick="openModal('settingsModal')" class="icon-circle-button text-gray-600 dark:text-gray-300" title="Settings">
+                <button onclick="openSettingsModal()" class="icon-circle-button text-gray-600 dark:text-gray-300" title="Settings">
                     <i data-lucide="settings" class="w-5 h-5"></i>
                 </button>
                 <button class="md:hidden p-2 text-blue-600 dark:text-blue-400 font-medium text-sm" onclick="jumpToToday()">Today</button>
@@ -2456,6 +2456,14 @@
                 if(extractedEvents.length === 0) {
                     showToast("Chrono AI couldn't detect valid events from the PDF.", 'warning');
                 } else {
+                    // Store PDF file name
+                    const parsedPDFs = JSON.parse(localStorage.getItem('uniCalParsedPDFs') || '[]');
+                    const fileName = file.name;
+                    if (!parsedPDFs.includes(fileName)) {
+                        parsedPDFs.push(fileName);
+                        localStorage.setItem('uniCalParsedPDFs', JSON.stringify(parsedPDFs));
+                    }
+                    
                     let count = 0;
                     extractedEvents.forEach(ev => {
                         if(ev.date) {
@@ -2625,6 +2633,16 @@
                     });
                 }
 
+                // Store PDF file name if events were found
+                if (count > 0) {
+                    const parsedPDFs = JSON.parse(localStorage.getItem('uniCalParsedPDFs') || '[]');
+                    const fileName = file.name;
+                    if (!parsedPDFs.includes(fileName)) {
+                        parsedPDFs.push(fileName);
+                        localStorage.setItem('uniCalParsedPDFs', JSON.stringify(parsedPDFs));
+                    }
+                }
+
                 showToast(`Found ${count} events!`, 'success');
                 closeModal('uploadModal');
                 renderApp();
@@ -2698,13 +2716,18 @@
                 </div>
             `;
 
-            // 3. Other Settings (Placeholder)
-            htmlContent += `
-                <div>
-                    <h4 class="font-bold text-gray-800 dark:text-white mb-2 text-md">Other Settings</h4>
-                    <p class="text-sm text-gray-600 dark:text-gray-300">No advanced settings available yet. Stay tuned!</p>
-                </div>
-            `;
+            // 3. Parsed PDFs List
+            const parsedPDFs = JSON.parse(localStorage.getItem('uniCalParsedPDFs') || '[]');
+            if (parsedPDFs.length > 0) {
+                htmlContent += `
+                    <div>
+                        <h4 class="font-bold text-gray-800 dark:text-white mb-2 text-md">Parsed PDFs</h4>
+                        <ul class="list-disc list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1 pl-4">
+                            ${parsedPDFs.map(pdfName => `<li class="truncate" title="${pdfName}">${pdfName}</li>`).join('')}
+                        </ul>
+                    </div>
+                `;
+            }
 
             contentDiv.innerHTML = htmlContent;
         }
